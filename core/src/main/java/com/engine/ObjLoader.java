@@ -1,0 +1,166 @@
+package com.engine;
+
+import com.badlogic.gdx.Gdx;
+
+import java.io.*;
+import java.util.*;
+
+/**
+ * Parses a .obj file into flat float arrays ready for a Mesh.
+ * Usage:
+ *   ObjLoader.Result r = ObjLoader.load("path/to/model.obj");
+ *   r.vertices   → [x, y, z,  x, y, z, ...]
+ *   r.normals    → [nx, ny, nz,  nx, ny, nz, ...]  (may be empty)
+ *   r.uvs        → [u, v,  u, v, ...]               (may be empty)
+ *   r.indices    → [i0, i1, i2, ...]
+ */
+public class ObjLoader {
+
+    public static class Result {
+        public float[] vertices;
+        public float[] normals;
+        public float[] uvs;
+        public int[] indices;
+
+        public boolean hasNormals() { return normals.length > 0; }
+        public boolean hasUVs()     { return uvs.length > 0; }
+
+        @Override
+        public String toString() {
+            return String.format(
+                "ObjLoader.Result { vertices: %d, normals: %d, uvs: %d, indices: %d }",
+                vertices.length / 3,
+                normals.length  / 3,
+                uvs.length      / 2,
+                indices.length  / 3
+            );
+        }
+    }
+
+    public static Result load(String path) throws IOException {
+
+        // Raw data from the file (may be referenced in any order by faces)
+        List<float[]> rawPositions = new ArrayList<>();
+        List<float[]> rawNormals   = new ArrayList<>();
+        List<float[]> rawUVs       = new ArrayList<>();
+
+        // Each face vertex is a unique combo of (pos, uv, normal) indices
+        // Key: "posIdx/uvIdx/normIdx"  →  flat array index
+        Map<String, Integer> indexMap = new LinkedHashMap<>();
+
+        // Assembled flat arrays
+        List<Float> positions = new ArrayList<>();
+        List<Float> normals   = new ArrayList<>();
+        List<Float> uvs       = new ArrayList<>();
+        List<Integer> indices = new ArrayList<>();
+
+        try (BufferedReader br = new BufferedReader(Gdx.files.internal(path).reader())) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                line = line.trim();
+
+                if (line.startsWith("v ")) {
+                    // Vertex position
+                    String[] t = line.split("\\s+");
+                    rawPositions.add(new float[]{
+                        Float.parseFloat(t[1]),
+                        Float.parseFloat(t[2]),
+                        Float.parseFloat(t[3])
+                    });
+
+                } else if (line.startsWith("vn ")) {
+                    // Vertex normal
+                    String[] t = line.split("\\s+");
+                    rawNormals.add(new float[]{
+                        Float.parseFloat(t[1]),
+                        Float.parseFloat(t[2]),
+                        Float.parseFloat(t[3])
+                    });
+
+                } else if (line.startsWith("vt ")) {
+                    // Texture coordinate
+                    String[] t = line.split("\\s+");
+                    rawUVs.add(new float[]{
+                        Float.parseFloat(t[1]),
+                        Float.parseFloat(t[2])
+                    });
+
+                } else if (line.startsWith("f ")) {
+                    // Face — triangulate if more than 3 verts (fan triangulation)
+                    String[] t = line.split("\\s+");
+                    int[] faceIndices = new int[t.length - 1];
+
+                    for (int i = 1; i < t.length; i++) {
+                        String key = t[i];
+                        if (!indexMap.containsKey(key)) {
+                            // New unique vertex — parse and add to flat arrays
+                            int nextIdx = indexMap.size();
+                            indexMap.put(key, nextIdx);
+
+                            String[] parts = key.split("/", -1);
+
+                            // Position (always present, 1-indexed in .obj)
+                            int posIdx = Integer.parseInt(parts[0]) - 1;
+                            float[] pos = rawPositions.get(posIdx);
+                            positions.add(pos[0]);
+                            positions.add(pos[1]);
+                            positions.add(pos[2]);
+
+                            // UV (optional)
+                            if (parts.length > 1 && !parts[1].isEmpty()) {
+                                int uvIdx = Integer.parseInt(parts[1]) - 1;
+                                float[] uv = rawUVs.get(uvIdx);
+                                uvs.add(uv[0]);
+                                uvs.add(uv[1]);
+                            }
+
+                            // Normal (optional)
+                            if (parts.length > 2 && !parts[2].isEmpty()) {
+                                int normIdx = Integer.parseInt(parts[2]) - 1;
+                                float[] norm = rawNormals.get(normIdx);
+                                normals.add(norm[0]);
+                                normals.add(norm[1]);
+                                normals.add(norm[2]);
+                            }
+                        }
+                        faceIndices[i - 1] = indexMap.get(key);
+                    }
+
+                    // Fan triangulation: (0,1,2), (0,2,3), (0,3,4) ...
+                    for (int i = 1; i < faceIndices.length - 1; i++) {
+                        indices.add(faceIndices[0]);
+                        indices.add(faceIndices[i]);
+                        indices.add(faceIndices[i + 1]);
+                    }
+                }
+                // Skip: #comments, mtllib, usemtl, s, o, g lines
+            }
+        }
+
+
+
+
+        // Convert to primitive arrays
+        Result result  = new Result();
+        result.vertices = toFloatArray(positions);
+        result.normals  = toFloatArray(normals);
+        result.uvs      = toFloatArray(uvs);
+        result.indices  = toIntArray(indices);
+
+        return result;
+    }
+
+
+    private static float[] toFloatArray(List<Float> list) {
+        float[] arr = new float[list.size()];
+        for (int i = 0; i < arr.length; i++) arr[i] = list.get(i);
+        return arr;
+    }
+
+    private static int[] toIntArray(List<Integer> list) {
+        int[] arr = new int[list.size()];
+        for (int i = 0; i < arr.length; i++) arr[i] = list.get(i);
+        return arr;
+    }
+
+}
