@@ -52,10 +52,8 @@ public class Renderer {
 
         final int stride = entity.mesh.stride;
 
-//        List<ViewTriangle> viewTriangles = new ArrayList<>();
-
-        float[] viewVertices = new float[vertices.length];
-
+        List<ViewTriangle> viewTriangles = new ArrayList<>();
+        //TODO no objects
         for (int i = 0; i < indices.length; i += 3) {
             int idx1 = indices[i];
             int idx2 = indices[i + 1];
@@ -77,9 +75,7 @@ public class Renderer {
             Vector4 viewSpaceV2 = (Vector4) MV.matmul(new Vector4(new float[]{x2, y2, z2, 1}));
             Vector4 viewSpaceV3 = (Vector4) MV.matmul(new Vector4(new float[]{x3, y3, z3, 1}));
 
-            viewVertices[idx1 * stride] = viewSpaceV1.get(0);
-            viewVertices[idx1 * stride + 1] = viewSpaceV1.get(1);
-//            viewTriangles.add(new ViewTriangle(viewSpaceV1, viewSpaceV2, viewSpaceV3));
+            viewTriangles.add(new ViewTriangle(viewSpaceV1, viewSpaceV2, viewSpaceV3));
         }
 
         viewTriangles.sort(new TriangleAvgDepthComparator()); //sort for painter's algorithm
