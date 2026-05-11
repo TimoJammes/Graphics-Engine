@@ -3,10 +3,13 @@ package com.engine;
 import com.badlogic.gdx.ApplicationAdapter;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
+import com.badlogic.gdx.assets.loaders.BitmapFontLoader;
 import com.badlogic.gdx.graphics.Color;
 
 //import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 
+import com.badlogic.gdx.graphics.g2d.BitmapFont;
+import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.utils.ScreenUtils;
 
@@ -21,6 +24,8 @@ public class Main extends ApplicationAdapter implements EngineListener {
     public static final int SCREEN_HEIGHT = 800;
 
     private ShapeRenderer shapeRenderer;
+    private BitmapFont font;
+    private SpriteBatch batch;
 
     private Engine engine;
 
@@ -28,6 +33,8 @@ public class Main extends ApplicationAdapter implements EngineListener {
     public void create() {
 //        batch = new SpriteBatch();
         shapeRenderer = new ShapeRenderer();
+        font = new BitmapFont();
+        batch = new SpriteBatch();
 
         engine = new Engine(shapeRenderer);
 
@@ -44,8 +51,9 @@ public class Main extends ApplicationAdapter implements EngineListener {
 
 
         Vector4 p1 = new Vector4(0, 0, -2, 1);
+//        Quaternion q1 = new Quaternion(0.707f, 0.707f, 0, 0);
         Quaternion q1 = new Quaternion();
-//        Vector3 s1 = new Vector3(.1f, .1f, .1f);
+//        Vector3 s1 = new Vector3(.5f, .5f, .5f);
         Vector3 s1 = new Vector3(1, 1, 1);
         Transform transform1 = new Transform(p1, q1, s1);
 
@@ -72,8 +80,8 @@ public class Main extends ApplicationAdapter implements EngineListener {
     @Override
     public void render() {
 
-
-        update(Gdx.graphics.getDeltaTime());
+        float dt = Gdx.graphics.getDeltaTime();
+        update(dt);
         draw();
 //        engine.renderEntities(Engine.renderType.SOLID);
     }
@@ -87,6 +95,11 @@ public class Main extends ApplicationAdapter implements EngineListener {
     void draw() {
         ScreenUtils.clear(Color.BLACK);
         engine.renderEntities(Engine.renderType.SOLID);
+
+        batch.begin();
+//        font.draw(batch, ""+Math.round(1/dt), 0, 0);
+        font.draw(batch, "FPS: " + Gdx.graphics.getFramesPerSecond(), 10, Gdx.graphics.getHeight() - 10);
+        batch.end();
 
     }
 

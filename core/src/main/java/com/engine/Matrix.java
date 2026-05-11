@@ -52,10 +52,6 @@ public class Matrix {
 
          if (cols != m2.rows) throw new IllegalArgumentException("#cols of M1 must be equal to #rows of M2");
 
-
-
-
-
          int newRows = rows;
          int newCols = m2.cols;
 
@@ -222,8 +218,8 @@ class Vector4 extends Vector {
         super(array, 4);
     }
 
-     Vector4(float x, float y, float z, float a) {
-        this(new float[]{x, y, z, a});
+     Vector4(float x, float y, float z, float w) {
+        this(new float[]{x, y, z, w});
     }
 
     Vector4 add(Vector4 m2) {

@@ -56,7 +56,7 @@ public class Transform {
     }
 
     void reset() {
-        position = new Vector4(new float[]{0, 0, 0, 1});
+        position = new Vector4(0, 0, 0, 1);
         rotation = new Quaternion();
         scale = new Vector3(1, 1, 1);
     }
