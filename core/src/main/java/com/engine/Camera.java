@@ -1,22 +1,22 @@
 package com.engine;
 
-import java.util.Arrays;
+//import java.util.Arrays;
 
 public class Camera {
 
 
     protected final Transform transform;
 
-    private final int FOV;
+    private final int fovDeg;
     private final double fovRad;
     private final float nearPlane;
     private final float farPlane;
     private final float aspectRatio;
 
-     Camera(int FOV, float near, float far, float aspect, Transform transform) {
+     Camera(int fovDeg, float near, float far, float aspect, Transform transform) {
         this.transform = transform;
-        this.FOV = FOV;
-        fovRad = Math.toRadians(FOV);
+        this.fovDeg = fovDeg;
+        fovRad = Math.toRadians(fovDeg);
         this.nearPlane = near;
         this.farPlane = far;
         this.aspectRatio = aspect;

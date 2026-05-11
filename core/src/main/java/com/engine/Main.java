@@ -2,23 +2,28 @@ package com.engine;
 
 import com.badlogic.gdx.ApplicationAdapter;
 import com.badlogic.gdx.Gdx;
-import com.badlogic.gdx.Input;
-import com.badlogic.gdx.assets.loaders.BitmapFontLoader;
+//import com.badlogic.gdx.Input;
+//import com.badlogic.gdx.assets.loaders.BitmapFontLoader;
 import com.badlogic.gdx.graphics.Color;
 
 //import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 
+import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.utils.ScreenUtils;
 
 import java.io.IOException;
-import java.util.Arrays;
+import java.util.ArrayDeque;
+import java.util.Queue;
+//import java.util.Arrays;
 
 /** {@link com.badlogic.gdx.ApplicationListener} implementation shared by all platforms. */
 public class Main extends ApplicationAdapter implements EngineListener {
 //    private SpriteBatch batch;
+
+    enum Event {DRAW}
 
     public static final int SCREEN_WIDTH = 1000;
     public static final int SCREEN_HEIGHT = 800;
@@ -27,7 +32,12 @@ public class Main extends ApplicationAdapter implements EngineListener {
     private BitmapFont font;
     private SpriteBatch batch;
 
+    private Queue<Event> eventQueue = new ArrayDeque<>();
+
     private Engine engine;
+
+    private boolean needsRedraw;
+    private int redrawCount;
 
     @Override
     public void create() {
@@ -42,7 +52,7 @@ public class Main extends ApplicationAdapter implements EngineListener {
 
         ObjLoader.Result res;
         try {
-            res = ObjLoader.load("animal-beaver.obj");
+            res = ObjLoader.load("OBJ-animals/animal-beaver.obj");
 //            res = ObjLoader.load("character-a.obj");
 //            res = ObjLoader.load("teapot.obj");
         } catch (IOException e) {
@@ -51,9 +61,7 @@ public class Main extends ApplicationAdapter implements EngineListener {
 
 
         Vector4 p1 = new Vector4(0, 0, -2, 1);
-//        Quaternion q1 = new Quaternion(0.707f, 0.707f, 0, 0);
         Quaternion q1 = new Quaternion();
-//        Vector3 s1 = new Vector3(.5f, .5f, .5f);
         Vector3 s1 = new Vector3(1, 1, 1);
         Transform transform1 = new Transform(p1, q1, s1);
 
@@ -62,17 +70,11 @@ public class Main extends ApplicationAdapter implements EngineListener {
         int[] i1 = res.indices;
         Mesh mesh1 = new Mesh(v1, i1, 3);
 
-        Entity e1 = new Entity(transform1, mesh1, Color.GREEN);
+        System.out.println(res.color);
 
-
-        Vector4 camPos = new Vector4(0, 0, 0, 1);
-        Quaternion camQ = new Quaternion();
-        engine.camera = new Camera(80, 0.01f, 1000, (float)Main.SCREEN_WIDTH/Main.SCREEN_HEIGHT, camPos, camQ);
+        Entity e1 = new Entity(transform1, mesh1, res.color);
 
         engine.addEntity(e1);
-
-//        engine.loadSimpleExample();
-
 
         onCameraMove();
     }
@@ -82,8 +84,23 @@ public class Main extends ApplicationAdapter implements EngineListener {
 
         float dt = Gdx.graphics.getDeltaTime();
         update(dt);
-        draw();
-//        engine.renderEntities(Engine.renderType.SOLID);
+
+        Event event = eventQueue.poll();
+        if (event != null) {
+            if (event == Event.DRAW) {
+                needsRedraw = true; //because of libGdx frame buffer drawing system
+                redrawCount = 0;
+            }
+        }
+
+        if (needsRedraw) {
+            draw();
+            redrawCount++;
+            if (redrawCount == 2) {
+                redrawCount = 0;
+                needsRedraw = false;
+            }
+        }
     }
 
     void update(float dt) {
@@ -95,9 +112,7 @@ public class Main extends ApplicationAdapter implements EngineListener {
     void draw() {
         ScreenUtils.clear(Color.BLACK);
         engine.renderEntities(Engine.renderType.SOLID);
-
         batch.begin();
-//        font.draw(batch, ""+Math.round(1/dt), 0, 0);
         font.draw(batch, "FPS: " + Gdx.graphics.getFramesPerSecond(), 10, Gdx.graphics.getHeight() - 10);
         batch.end();
 
@@ -105,7 +120,7 @@ public class Main extends ApplicationAdapter implements EngineListener {
 
     @Override
     public void onCameraMove() {
-//        draw();
+        eventQueue.add(Event.DRAW);
     }
 
     @Override

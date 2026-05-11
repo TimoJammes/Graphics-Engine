@@ -10,7 +10,7 @@ import java.util.ArrayList;
 public class Engine {
 
 
-    static enum renderType {WIRE_FRAME, SOLID}
+    enum renderType {WIRE_FRAME, SOLID}
 
     private EngineListener listener;
 
@@ -20,14 +20,18 @@ public class Engine {
 
      final ArrayList<Entity> entities = new  ArrayList<>();
 
-
-
      Engine(ShapeRenderer shapeRenderer, Camera camera) {
-        renderer = new Renderer(shapeRenderer);
         this.camera = camera;
+
+        renderer = new Renderer(shapeRenderer);
     }
      Engine(ShapeRenderer shapeRenderer) {
-        renderer = new Renderer(shapeRenderer);
+
+         renderer = new Renderer(shapeRenderer);
+
+         Vector4 camPos = new Vector4(0, 0, 0, 1);
+         Quaternion camQ = new Quaternion();
+         camera = new Camera(80, 0.01f, 1000, (float)Main.SCREEN_WIDTH/Main.SCREEN_HEIGHT, camPos, camQ);
     }
 
      void renderEntities(renderType type) {
@@ -53,10 +57,10 @@ public class Engine {
         if (Gdx.input.isKeyPressed(Input.Keys.SPACE))      dy += mag;
         if (Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT)) dy -= mag;
 
-        if (Gdx.input.isKeyPressed(Input.Keys.W)) rotX += theta;
-        if (Gdx.input.isKeyPressed(Input.Keys.S)) rotX -= theta;
-        if (Gdx.input.isKeyPressed(Input.Keys.A)) rotY += theta;
-        if (Gdx.input.isKeyPressed(Input.Keys.D)) rotY -= theta;
+        if (Gdx.input.isKeyPressed(Input.Keys.W)) rotX += (float) theta;
+        if (Gdx.input.isKeyPressed(Input.Keys.S)) rotX -= (float) theta;
+        if (Gdx.input.isKeyPressed(Input.Keys.A)) rotY += (float) theta;
+        if (Gdx.input.isKeyPressed(Input.Keys.D)) rotY -= (float) theta;
 
         camera.translateLocal(dx, 0, dz);
         camera.translate(0, dy, 0);
@@ -70,45 +74,6 @@ public class Engine {
         if (rotX != 0 || rotY != 0 || dx  != 0 || dy != 0 || dz != 0) {
             if (listener != null) listener.onCameraMove();
         }
-//        if (Gdx.input.isKeyPressed(Input.Keys.LEFT)) {
-//            camera.translateLocal(-1*mag, 0, 0);
-//        }
-//        if (Gdx.input.isKeyPressed(Input.Keys.RIGHT)) {
-//            camera.translateLocal(1*mag, 0, 0);
-//        }
-//        if (Gdx.input.isKeyPressed(Input.Keys.UP)) {
-//            camera.translateLocal(0, 0, -1*mag);
-//        }
-//        if (Gdx.input.isKeyPressed(Input.Keys.DOWN)) {
-//            camera.translateLocal(0, 0, 1*mag);
-//        }
-//        if (Gdx.input.isKeyPressed(Input.Keys.SPACE)) {
-//            camera.translate(0, 1*mag, 0);
-//        }
-//        if (Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT)) {
-//            camera.translate(0, -1*mag, 0);
-//        }
-//
-//        if (Gdx.input.isKeyPressed(Input.Keys.W)) {
-////            camera.rotate(-theta, camera.transform.getRight());
-//            camera.rotate(theta, new Vector3(1, 0, 0));
-//        }
-//        if (Gdx.input.isKeyPressed(Input.Keys.S)) {
-//            camera.rotate(-theta, new Vector3(1, 0, 0));
-////            camera.rotate(theta, camera.transform.getRight());
-//        }
-//        if (Gdx.input.isKeyPressed(Input.Keys.A)) {
-//            camera.rotate(theta, new Vector3(0, 1, 0));
-////            camera.rotate(theta, camera.transform.getUp());
-//        }
-//        if (Gdx.input.isKeyPressed(Input.Keys.D)) {
-//            camera.rotate(-theta, new Vector3(0, 1, 0));
-////            camera.rotate(-theta, camera.transform.getUp());
-//        }
-//
-//        if (Gdx.input.isKeyPressed(Input.Keys.R)) {
-//            camera.resetTransform();
-//        }
      }
 
     void loadSimpleExample() {
@@ -139,10 +104,6 @@ public class Engine {
 
         Entity e1 = new Entity(transform1, mesh1, Color.GREEN);
 
-
-        Vector4 camPos = new Vector4(0, 0, 0, 1);
-        Quaternion camQ = new Quaternion();
-        camera = new Camera(90, 0.1f, 1000, (float) Main.SCREEN_WIDTH/Main.SCREEN_HEIGHT, camPos, camQ);
 
         entities.add(e1);
     }

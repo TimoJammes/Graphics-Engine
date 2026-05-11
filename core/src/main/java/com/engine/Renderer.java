@@ -3,9 +3,9 @@ package com.engine;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 
-import java.util.ArrayList;
+//import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Comparator;
+//import java.util.Comparator;
 import java.util.List;
 
 
@@ -14,7 +14,8 @@ public class Renderer {
     private final ShapeRenderer shapeRenderer;
 
     private static final int MAX_VERTICES = 1_000_000;
-    private final float[] viewVertices = new float[MAX_VERTICES * 4];
+    private static final int viewStride = 4; //stride of 4 to store w (4th coord) of vertices
+    private final float[] viewVertices = new float[MAX_VERTICES * viewStride];
     private final Integer[] triangleOrder = new Integer[MAX_VERTICES * 2];
 
      Renderer(ShapeRenderer shapeRenderer) {
@@ -44,9 +45,6 @@ public class Renderer {
     }
 
     void solidRender(Entity entity, Matrix V, Matrix P) {
-//        shapeRenderer.setColor(entity.color);
-
-//        Matrix MVP = VP.matmul(entity.transform.toMatrix());
         Matrix M = entity.transform.toMatrix();
 
         Matrix MV = V.matmul(M);
@@ -57,12 +55,6 @@ public class Renderer {
 
         final int stride = entity.mesh.stride;
 
-//        List<ViewTriangle> viewTriangles = new ArrayList<>();
-
-        final int viewStride = 4; //stride of 4 to store w (4th coord) of vertices
-//        final float[] viewVertices = new float[vertices.length / stride * viewStride];
-
-//        final Integer[] triangleOrder = new Integer[indices.length / 3]; //store index of first index of each triangle in indices
 
         final int triangleCount = indices.length / 3;
 
@@ -88,10 +80,6 @@ public class Renderer {
             return Float.compare(zA, zB);
         });
 
-
-//        viewTriangles.sort(new TriangleAvgDepthComparator()); //sort for painter's algorithm
-//        viewTriangles.sort(new TriangleMinDepthComparator()); //sort for painter's algorithm
-
         for (int i = 0; i < triangleCount; i++) {
             int index = triangleOrder[i];
 
@@ -116,15 +104,11 @@ public class Renderer {
                 viewVertices[idx3*viewStride+2],
                 viewVertices[idx3*viewStride+3]);
 
-//            Vector4 viewSpaceV1 = viewTriangle.vertex1;
-//            Vector4 viewSpaceV2 = viewTriangle.vertex2;
-//            Vector4 viewSpaceV3 = viewTriangle.vertex3;
-
             Vector4 clipSpaceV1 = (Vector4) P.matmul(viewSpaceV1);
             Vector4 clipSpaceV2 = (Vector4) P.matmul(viewSpaceV2);
             Vector4 clipSpaceV3 = (Vector4) P.matmul(viewSpaceV3);
 
-//            //TODO Sutherland-Hodgman clipping
+            //TODO Sutherland-Hodgman clipping
             if (clipSpaceV1.get(3) <= 0 && clipSpaceV2.get(3) <= 0 && clipSpaceV3.get(3) <= 0) continue;
 
             Vector3 ndcSpaceV1 = clipToNdc(clipSpaceV1);
@@ -241,37 +225,3 @@ public class Renderer {
          return (z1+z2+z3)/3f;
     }
 }
-
-//class ViewTriangle {
-//
-//    Vector4 vertex1;
-//    Vector4 vertex2;
-//    Vector4 vertex3;
-//
-//    ViewTriangle(Vector4 vertex1, Vector4 vertex2, Vector4 vertex3) {
-//        this.vertex1 = vertex1;
-//        this.vertex2 = vertex2;
-//        this.vertex3 = vertex3;
-//    }
-//
-//}
-//
-//class TriangleAvgDepthComparator implements Comparator<ViewTriangle> {
-//    @Override
-//    public int compare(ViewTriangle a, ViewTriangle b) {
-//        float avgZ1 = (a.vertex1.get(2)+a.vertex2.get(2)+a.vertex3.get(2))/3;
-//        float avgZ2 = (b.vertex1.get(2)+b.vertex2.get(2)+b.vertex3.get(2))/3;
-//
-//        return Float.compare(avgZ1, avgZ2);
-//    }
-//}
-//
-//class TriangleMinDepthComparator implements Comparator<ViewTriangle> {
-//    @Override
-//    public int compare(ViewTriangle a, ViewTriangle b) {
-//        float minZ1 = Math.max(Math.max(a.vertex1.get(2),  a.vertex2.get(2)), a.vertex3.get(2)); //min in abs val
-//        float minZ2 = Math.max(Math.max(b.vertex1.get(2),  b.vertex2.get(2)), b.vertex3.get(2));
-//
-//        return Float.compare(minZ1, minZ2);
-//    }
-//}
