@@ -32,6 +32,9 @@ public class Matrix {
         return array[i][j];
     }
 
+    void set(int i, int j, float val){
+        array[i][j] = val;
+    }
 
     Matrix add(Matrix m2) {
          if (cols != m2.cols || rows != m2.rows) throw new IllegalArgumentException("Attempted to add matrices with different shapes!");
@@ -80,6 +83,17 @@ public class Matrix {
          return res;
     }
 
+    static float normSqr(Matrix m) {
+         float sum = 0;
+
+         for (int i = 0; i < m.rows; i++) {
+             for (int j = 0; j < m.cols; j++) {
+                 sum += m.array[i][j] * m.array[i][j];
+             }
+         }
+         return sum;
+    }
+
      Vector col(int j) {
         final float[] array =  new float[rows];
 
@@ -119,6 +133,18 @@ public class Matrix {
         }
 
         return new Matrix(array);
+    }
+
+    Matrix sub(Matrix m2) {
+        final float[][] array =  new float[rows][cols];
+        for(int i=0; i < rows; i++) {
+            for(int j=0; j < cols; j++) {
+                array[i][j] = this.array[i][j] - m2.array[i][j];
+            }
+        }
+
+        return new Matrix(array);
+
     }
 
     int[] shape(){
@@ -180,6 +206,14 @@ class Vector extends Matrix {
 
         return get(i, 0);
     }
+
+    void set(int i, float val) {
+         oneDimArray[i] = val;
+
+         super.set(i, 0, val);
+    }
+
+
     @Override
      float get(int i, int j) {
         if (j != 0) throw new UnsupportedOperationException("Tried to get in col > 1 in Vector"+rows+"!");
@@ -199,14 +233,57 @@ class Vector2 extends Vector {
 }
 
 class Vector3 extends Vector {
+
+    float x;
+    float y;
+    float z;
+
      Vector3(float[] array) {
-        super(array, 3);
+
+         super(array, 3);
+         x = array[0];
+         y = array[1];
+         z = array[2];
     }
 
      Vector3(float x, float y, float z) {
-        this(new float[]{x, y, z});
+
+         this(new float[]{x, y, z});
     }
 
+    @Override
+    void set(int i, int j, float val) {
+        switch (i) {
+            case 0:
+                x = val;
+                break;
+            case 1:
+                y = val;
+                break;
+            case 2:
+                z = val;
+                break;
+        }
+
+        super.set(i, j, val);
+    }
+    @Override
+    void set(int i, float val) {
+         switch (i) {
+             case 0:
+                 x = val;
+                 break;
+             case 1:
+                 y = val;
+                 break;
+             case 2:
+                 z = val;
+                 break;
+         }
+
+         super.set(i, val);
+
+    }
     @Override
     Vector3 negate() {
          return new Vector3(-get(0),  -get(1), -get(2));

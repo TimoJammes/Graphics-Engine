@@ -2,7 +2,10 @@ package com.engine;
 
 //import java.util.Arrays;
 
-public class Camera {
+import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.Input;
+
+public class Camera implements Movable {
 
 
     protected final Transform transform;
@@ -26,19 +29,49 @@ public class Camera {
         this(FOV, near, far, aspect, new Transform(position, rotation, new Vector3(1, 1, 1)));
     }
 
-    void rotate(double theta, float ax, float ay, float az) {
-         transform.rotation.rotate(theta, ax, ay, az);
+    boolean update(float dt) {
+        double theta = Math.PI / 256 * dt * 144;
+        float mag = .01f * dt * 144;
+
+        float dx = 0, dy = 0, dz = 0;
+        float rotX = 0, rotY = 0;
+
+        if (Gdx.input.isKeyPressed(Input.Keys.LEFT))       dx -= mag;
+        if (Gdx.input.isKeyPressed(Input.Keys.RIGHT))      dx += mag;
+        if (Gdx.input.isKeyPressed(Input.Keys.UP))         dz -= mag;
+        if (Gdx.input.isKeyPressed(Input.Keys.DOWN))       dz += mag;
+        if (Gdx.input.isKeyPressed(Input.Keys.SPACE))      dy += mag;
+        if (Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT)) dy -= mag;
+
+        if (Gdx.input.isKeyPressed(Input.Keys.W)) rotX += (float) theta;
+        if (Gdx.input.isKeyPressed(Input.Keys.S)) rotX -= (float) theta;
+        if (Gdx.input.isKeyPressed(Input.Keys.A)) rotY += (float) theta;
+        if (Gdx.input.isKeyPressed(Input.Keys.D)) rotY -= (float) theta;
+
+        translateLocal(dx, 0, dz);
+        translateWorld(0, dy, 0);
+
+        if (rotX != 0) rotateLocal(rotX, 1, 0, 0);
+        if (rotY != 0) rotateLocal(rotY, 0, 1, 0);
+
+
+        if (Gdx.input.isKeyPressed(Input.Keys.R)) resetTransform();
+
+        return (rotX != 0 || rotY != 0 || dx  != 0 || dy != 0 || dz != 0 || Gdx.input.isKeyPressed(Input.Keys.R));
     }
 
-    void rotate(double theta, Vector3 axis) {
-         transform.rotation.rotate(theta, axis.get(0), axis.get(1), axis.get(2));
+    public void rotateLocal(double theta, float ax, float ay, float az) {
+         transform.rotation.rotateLocal(theta, ax, ay, az);
+    }
+    public void rotateWorld(double theta, float ax, float ay, float az) {
+         transform.rotation.rotateWorld(theta, ax, ay, az);
     }
 
-    void translate(float dx, float dy, float dz) {
-         transform.translate(dx, dy, dz);
+    public void translateWorld(float dx, float dy, float dz) {
+         transform.translateWorld(dx, dy, dz);
     }
 
-    void translateLocal(float dx, float dy, float dz) {
+    public void translateLocal(float dx, float dy, float dz) {
          transform.translateLocal(dx, dy, dz);
     }
 

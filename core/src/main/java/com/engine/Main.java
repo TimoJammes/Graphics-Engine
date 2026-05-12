@@ -50,40 +50,16 @@ public class Main extends ApplicationAdapter implements EngineListener {
 
         engine.setListener(this);
 
-        ObjLoader.Result res;
-        try {
-            res = ObjLoader.load("OBJ-animals/animal-beaver.obj");
-//            res = ObjLoader.load("character-a.obj");
-//            res = ObjLoader.load("teapot.obj");
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
+        engine.setScene(new GroundScene());
 
-
-        Vector4 p1 = new Vector4(0, 0, -2, 1);
-        Quaternion q1 = new Quaternion();
-        Vector3 s1 = new Vector3(1, 1, 1);
-        Transform transform1 = new Transform(p1, q1, s1);
-
-        float[] v1 = res.vertices;
-
-        int[] i1 = res.indices;
-        Mesh mesh1 = new Mesh(v1, i1, 3);
-
-        System.out.println(res.color);
-
-        Entity e1 = new Entity(transform1, mesh1, res.color);
-
-        engine.addEntity(e1);
-
-        onCameraMove();
+        eventQueue.add(Event.DRAW);
     }
 
     @Override
     public void render() {
 
         float dt = Gdx.graphics.getDeltaTime();
-        update(dt);
+        engine.update(dt);
 
         Event event = eventQueue.poll();
         if (event != null) {
@@ -103,23 +79,18 @@ public class Main extends ApplicationAdapter implements EngineListener {
         }
     }
 
-    void update(float dt) {
-
-        engine.moveCamera(dt);
-
-    }
+    void update(float dt) {}
 
     void draw() {
-        ScreenUtils.clear(Color.BLACK);
-        engine.renderEntities(Engine.renderType.SOLID);
+//        ScreenUtils.clear(Color.BLACK);
+        engine.renderScene();
         batch.begin();
         font.draw(batch, "FPS: " + Gdx.graphics.getFramesPerSecond(), 10, Gdx.graphics.getHeight() - 10);
         batch.end();
-
     }
 
     @Override
-    public void onCameraMove() {
+    public void onMovement() {
         eventQueue.add(Event.DRAW);
     }
 

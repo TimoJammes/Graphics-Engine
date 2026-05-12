@@ -11,7 +11,13 @@ public class Transform {
         this.rotation = rotation;
     }
 
-    void translate(float dx, float dy, float dz) {
+    Transform() {
+        this.position = new Vector4(0, 0, 0, 0);
+        this.scale = new Vector3(1, 1, 1);
+        this.rotation = new Quaternion();
+    }
+
+    void translateWorld(float dx, float dy, float dz) {
          position = position.add(new Vector4(dx, dy, dz, 0));
 
 

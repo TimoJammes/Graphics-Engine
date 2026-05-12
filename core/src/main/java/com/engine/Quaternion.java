@@ -35,7 +35,7 @@ public class Quaternion{
         return new Matrix(m);
     }
 
-    void rotate(double theta, float ax, float ay, float az) {
+    void rotateLocal(double theta, float ax, float ay, float az) {
         double l = Math.sqrt(ax*ax + ay*ay + az*az);
         ax /= (float) l;
         ay /= (float) l;
@@ -46,12 +46,35 @@ public class Quaternion{
         float deltaY = (float) (Math.sin(theta/2) * ay);
         float deltaZ = (float) (Math.sin(theta/2) * az);
 
-        float[] newQCoords = mul(deltaW, deltaX, deltaY, deltaZ);
+        float[] newQCoords = this.mul(deltaW, deltaX, deltaY, deltaZ);
 
         w = newQCoords[0];
         x = newQCoords[1];
         y = newQCoords[2];
         z = newQCoords[3];
+
+        normalize();
+
+    }
+    void rotateWorld(double theta, float ax, float ay, float az) {
+        double l = Math.sqrt(ax*ax + ay*ay + az*az);
+        ax /= (float) l;
+        ay /= (float) l;
+        az /= (float) l;
+
+        float deltaW = (float) Math.cos(theta/2);
+        float deltaX = (float) (Math.sin(theta/2) * ax);
+        float deltaY = (float) (Math.sin(theta/2) * ay);
+        float deltaZ = (float) (Math.sin(theta/2) * az);
+
+        Quaternion deltaQ = new  Quaternion(deltaW, deltaX, deltaY, deltaZ);
+
+        Quaternion newQ = deltaQ.mul(this);
+
+        w = newQ.w;
+        x = newQ.x;
+        y =  newQ.y;
+        z = newQ.z;
 
         normalize();
 

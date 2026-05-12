@@ -6,17 +6,17 @@ public class Mesh {
      final float[] vertices;
      final int[] indices;
      final int[] edges;
-     final int stride;
+//     final int stride;
 
-    public Mesh(float[] vertices, int[] indices, int stride) {
+    public Mesh(float[] vertices, int[] indices) {
         this.vertices = vertices;
         this.indices = indices;
-        this.stride = stride;
+//        this.stride = stride;
         this.edges = getDeduplicatedEdges(indices);
 
-        System.out.println("Vertices: " + vertices.length);
-        System.out.println("Indices: " + edges.length);
-        System.out.println("Edges: " + edges.length);
+//        System.out.println("Vertices: " + vertices.length);
+//        System.out.println("Indices: " + edges.length);
+//        System.out.println("Edges: " + edges.length);
     }
 
     static int[] getDeduplicatedEdges(int[] indices) {
