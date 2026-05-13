@@ -30,12 +30,18 @@ public class Engine {
     }
      Engine(ShapeRenderer shapeRenderer) {
 
-         renderer = new Renderer(shapeRenderer);
+//         renderer = new Renderer(shapeRenderer);
 
-         Vector4 camPos = new Vector4(0, 0, 0, 1);
+         Vector4 camPos = new Vector4(0, 2, 0, 1);
          Quaternion camQ = new Quaternion();
-         camera = new Camera(80, 0.01f, 1000, (float)Main.SCREEN_WIDTH/Main.SCREEN_HEIGHT, camPos, camQ);
-    }
+//         camQ.rotateWorld(-Math.PI/8, 1, 0, 0);
+
+         this(shapeRenderer,
+             new Camera(80, 0.01f, 1000,
+                 (float)Main.SCREEN_WIDTH/Main.SCREEN_HEIGHT, camPos, camQ));
+
+
+     }
 
     void renderScene() {
          renderer.renderScene(scene, camera);

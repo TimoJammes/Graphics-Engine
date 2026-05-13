@@ -148,8 +148,8 @@ public class ObjLoader {
         result.indices  = toIntArray(indices);
 
         // --- Parse .mtl if referenced ---
-        System.out.println("mtllib: " + mtlFile);
-        System.out.println("mtlPath: " + parentDir(path) + mtlFile);
+//        System.out.println("mtllib: " + mtlFile);
+//        System.out.println("mtlPath: " + parentDir(path) + mtlFile);
 
         if (mtlFile != null) {
             String mtlPath = parentDir(path) + mtlFile;

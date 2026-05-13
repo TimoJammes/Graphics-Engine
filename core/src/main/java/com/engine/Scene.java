@@ -39,21 +39,21 @@ public abstract class Scene {
         entities.add(e);
     }
 
-    Entity addEntityFromObj(String path) {
-        ObjLoader.Result res;
-        try {
-            res = ObjLoader.load(path);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-
-        Mesh mesh1 = new Mesh(res.vertices, res.indices);
-
-        Entity entity = new Entity(mesh1, res.color);
-        addEntity(entity);
-
-        return entity;
-    }
+//    Entity addEntityFromObj(String path) {
+//        ObjLoader.Result res;
+//        try {
+//            res = ObjLoader.load(path);
+//        } catch (IOException e) {
+//            throw new RuntimeException(e);
+//        }
+//
+//        Mesh mesh1 = new Mesh(res.vertices, res.indices);
+//
+//        Entity entity = new Entity(mesh1, res.color);
+//        addEntity(entity);
+//
+//        return entity;
+//    }
 
 }
 
@@ -62,7 +62,7 @@ class TeapotScene extends Scene {
 
         backgroundColor = Color.BLUE;
 
-        Entity teapot = addEntityFromObj("teapot.obj");
+        Entity teapot = new Entity("teapot.obj");
 
         teapot.setPos(0, 0, -10);
 //        teapot.setScale(.1f, .1f, .1f);
@@ -73,6 +73,8 @@ class TeapotScene extends Scene {
 //        teapot.color = Color.RED;
 
         renderOptions.put(teapot, new RenderOptions(RenderMode.SOLID, true, false));
+
+        entities.add(teapot);
     }
 
 
@@ -83,17 +85,18 @@ class AnimalScene extends Scene {
 
         backgroundColor = Color.BLUE;
 
-        Entity beaver1 = addEntityFromObj("OBJ-animals/animal-beaver.obj");
+        Entity beaver1 = new Entity("OBJ-animals/animal-beaver.obj");
+        Entity beaver2 = new Entity("OBJ-animals/animal-beaver.obj");
+        Entity beaver3 = new Entity("OBJ-animals/animal-beaver.obj");
+        Entity beaver4 = new Entity("OBJ-animals/animal-beaver.obj");
+
         beaver1.color = Color.BROWN;
-        Entity beaver2 = addEntityFromObj("OBJ-animals/animal-beaver.obj");
         beaver2.color = Color.BROWN;
-        Entity beaver3 = addEntityFromObj("OBJ-animals/animal-beaver.obj");
         beaver3.color = Color.BROWN;
-        Entity beaver4 = addEntityFromObj("OBJ-animals/animal-beaver.obj");
         beaver4.color = Color.BROWN;
 
         beaver1.setPos(0, 0, -2);
-        beaver2.setPos(0, 0, 2);
+        beaver2.setPos(0, 1, 2);
         beaver3.setPos(2, 0, 0);
         beaver4.setPos(-2, 0, 0);
 
@@ -102,12 +105,23 @@ class AnimalScene extends Scene {
         beaver4.rotateWorld(Math.PI/2, 0, 1, 0);
 
         beaver1.behaviors.add(new RotateBehavior(Math.PI, new Vector3(0, 1, 0)));
-        beaver1.behaviors.add(new OscillateBehavior(1, new Vector3(0, 1, 0), (Vector3)beaver1.transform.position.slice(0, 3)));
+        beaver2.behaviors.add(new OscillateBehavior(1, new Vector3(0, 1, 0), (Vector3)beaver2.transform.position.slice(0, 3)));
 
         renderOptions.put(beaver1, new RenderOptions(RenderMode.SOLID, false, true));
         renderOptions.put(beaver2, new RenderOptions(RenderMode.SOLID, true, true));
         renderOptions.put(beaver3, new RenderOptions(RenderMode.SOLID, true, false));
         renderOptions.put(beaver4, new RenderOptions(RenderMode.WIRE_FRAME, false, false));
+
+        Entity ground = new GroundEntity(Color.GREEN, 10, 10);
+
+        float scale = 2f;
+        ground.setScale(scale, scale, scale);
+        entities.add(ground);
+        entities.add(beaver1);
+        entities.add(beaver2);
+        entities.add(beaver3);
+        entities.add(beaver4);
+
     }
 
 }
@@ -117,40 +131,8 @@ class GroundScene extends Scene {
 
         backgroundColor = Color.BLUE;
 
-        int x = 10;
-        int y = x;
-        float[] vertices = new float[x*y*3];
 
-        for (int i = 0; i < x; i++) {
-            for (int j = 0; j < y; j++) {
-                vertices[(i*y+j)*3] = i - x/2f;
-                vertices[(i*y+j)*3+2] = j - y/2f;
-            }
-        }
-
-        int[] indices = new int[(x-1)*(y-1)*6];
-        int idx = 0;
-        for (int i = 0; i < x-1; i++) {
-            for (int j = 0; j < y-1; j++) {
-                int tl = i*y + j;
-                int tr = i*y + j+1;
-                int bl = (i+1)*y + j;
-                int br = (i+1)*y + j+1;
-
-                indices[idx++] = tl;
-                indices[idx++] = bl;
-                indices[idx++] = br;
-
-                indices[idx++] = tl;
-                indices[idx++] = br;
-                indices[idx++] = tr;
-            }
-        }
-
-
-        Mesh mesh = new Mesh(vertices, indices);
-
-        Entity ground = new Entity(mesh, Color.GREEN);
+        Entity ground = new GroundEntity(Color.GREEN, 10, 10);
 
         ground.setPos(0, -.5f, 0);
         float scale = 1f;

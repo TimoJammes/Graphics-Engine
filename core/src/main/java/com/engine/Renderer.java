@@ -119,10 +119,12 @@ public class Renderer {
             //TODO Sutherland-Hodgman clipping
 
             // behind camera check
-            if (w1 <= 0 && w2 <= 0 && w3 <= 0) continue;
+//            if (w1 <= 0 && w2 <= 0 && w3 <= 0) continue;
+            if (w1 <= 0 || w2 <= 0 || w3 <= 0) continue;
 
             // basic NDC bounds check
             if (!inFrustum(idx1) && !inFrustum(idx2) && !inFrustum(idx3)) continue;
+//            if (!inFrustum(idx1) || !inFrustum(idx2) || !inFrustum(idx3)) continue;
 
             triangleOrder[triangleCount++] = i;  // only add visible triangles
         }

@@ -16,6 +16,9 @@ public class Camera implements Movable {
     private final float farPlane;
     private final float aspectRatio;
 
+    double pitch = 0;
+    double yaw = 0;
+
      Camera(int fovDeg, float near, float far, float aspect, Transform transform) {
         this.transform = transform;
         this.fovDeg = fovDeg;
@@ -31,7 +34,7 @@ public class Camera implements Movable {
 
     boolean update(float dt) {
         double theta = Math.PI / 256 * dt * 144;
-        float mag = .01f * dt * 144;
+        float mag = .02f * dt * 144;
 
         float dx = 0, dy = 0, dz = 0;
         float rotX = 0, rotY = 0;
@@ -48,14 +51,23 @@ public class Camera implements Movable {
         if (Gdx.input.isKeyPressed(Input.Keys.A)) rotY += (float) theta;
         if (Gdx.input.isKeyPressed(Input.Keys.D)) rotY -= (float) theta;
 
+        if (Gdx.input.isKeyPressed(Input.Keys.R)) resetTransform();
+
         translateLocal(dx, 0, dz);
         translateWorld(0, dy, 0);
 
-        if (rotX != 0) rotateLocal(rotX, 1, 0, 0);
-        if (rotY != 0) rotateLocal(rotY, 0, 1, 0);
+//        if (rotX != 0) rotateLocal(rotX, 1, 0, 0);
+//        if (rotY != 0) rotateLocal(rotY, 0, 1, 0);
 
+        pitch += rotX;
+        yaw += rotY;
 
-        if (Gdx.input.isKeyPressed(Input.Keys.R)) resetTransform();
+        pitch = Math.clamp(pitch, -Math.PI / 2, Math.PI / 2);
+
+        Quaternion qYaw   = new Quaternion(); qYaw.rotateWorld(yaw,   0, 1, 0);
+        Quaternion qPitch = new Quaternion(); qPitch.rotateWorld(pitch, 1, 0, 0);
+        transform.rotation = qYaw.mul(qPitch);  // yaw first, then pitch
+
 
         return (rotX != 0 || rotY != 0 || dx  != 0 || dy != 0 || dz != 0 || Gdx.input.isKeyPressed(Input.Keys.R));
     }
