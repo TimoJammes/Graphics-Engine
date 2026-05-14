@@ -140,7 +140,7 @@ class GroundScene extends Scene {
 
         addEntity(ground);
 
-        renderOptions.put(ground, new RenderOptions(RenderMode.SOLID, true, true));
+        renderOptions.put(ground, new RenderOptions(RenderMode.WIRE_FRAME, false, true));
 
     }
 }

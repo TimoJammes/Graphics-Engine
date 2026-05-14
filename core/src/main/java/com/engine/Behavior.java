@@ -18,7 +18,7 @@ class RotateBehavior implements Behavior {
 
     @Override
     public void update(Entity entity, float dt) {
-        entity.rotateWorld(speed*dt, axis.x, axis.y, axis.z);
+        entity.rotateWorld(speed*dt, axis.getX(), axis.getY(), axis.getZ());
     }
 }
 
@@ -36,9 +36,9 @@ class OscillateBehavior implements Behavior {
 
     @Override
     public void update(Entity entity, float dt) {
-        float dx = speed * dt * axis.x * dir;
-        float dy = speed * dt * axis.y * dir;
-        float dz = speed * dt * axis.z * dir;
+        float dx = speed * dt * axis.getX() * dir;
+        float dy = speed * dt * axis.getY() * dir;
+        float dz = speed * dt * axis.getZ() * dir;
         entity.translateWorld(dx, dy, dz);
 
         if (Matrix.normSqr(entity.transform.position.slice(0, 3).sub(center)) >= 1)
