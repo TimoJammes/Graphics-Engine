@@ -50,7 +50,7 @@ public class Main extends ApplicationAdapter implements EngineListener {
 
         engine.setListener(this);
 
-        engine.setScene(new GroundScene());
+        engine.setScene(new AnimalScene());
 
         eventQueue.add(Event.DRAW);
     }
@@ -70,7 +70,7 @@ public class Main extends ApplicationAdapter implements EngineListener {
         }
 
         if (needsRedraw) {
-            draw();
+            draw(dt);
             redrawCount++;
             if (redrawCount == 2) {
                 redrawCount = 0;
@@ -81,11 +81,12 @@ public class Main extends ApplicationAdapter implements EngineListener {
 
     void update(float dt) {}
 
-    void draw() {
+    void draw(float dt) {
 //        ScreenUtils.clear(Color.BLACK);
         engine.renderScene();
         batch.begin();
         font.draw(batch, "FPS: " + Gdx.graphics.getFramesPerSecond(), 10, Gdx.graphics.getHeight() - 10);
+//        font.draw(batch, "FPS: " + Math.round(1/dt), 10, Gdx.graphics.getHeight() - 10);
         batch.end();
     }
 
