@@ -1,69 +1,65 @@
 package com.engine;
 
 public class Transform {
-    Vector4 position;
-    Vector3 scale;
+    float[] position; //x, y, z, w
+    float[] scale; //sx, sy, sz
     Quaternion rotation;
 
-     Transform(Vector4 position, Quaternion rotation, Vector3 scale) {
+     Transform(float[] position, Quaternion rotation, float[] scale) {
         this.position = position;
         this.scale = scale;
         this.rotation = rotation;
     }
 
     Transform() {
-        this.position = new Vector4(0, 0, 0, 1);
-        this.scale = new Vector3(1, 1, 1);
+        this.position = new float[]{0, 0, 0, 1};
+        this.scale = new float[]{1, 1, 1};
         this.rotation = new Quaternion();
     }
 
     void translateWorld(float dx, float dy, float dz) {
-         position = position.add(new Vector4(dx, dy, dz, 0));
+         position = Matrix.add(position, new float[]{dx, dy, dz, 0});
 
 
     }
     void translateLocal(float dx, float dy, float dz) {
 
-         Vector4 forward = rotation.rotate(dx, dy, dz);
-         position = position.add(forward);
+         float[] forward = rotation.rotate(dx, dy, dz);
+         position = Matrix.add(position, forward);
     }
 
-     final Matrix toMatrix() {
+     final float[][] toMatrix() {
+        final float[][] res = new float[4][4];
 
-
-
-        final float[][] array = new float[4][4];
-
-        final Matrix quaternionMatrix = rotation.toMatrix();
+        final float[][] quaternionMatrix = rotation.toMatrix();
 
         for (int i = 0; i < 3; i++) {
             for (int j = 0; j < 3; j++) {
-                array[i][j] = quaternionMatrix.get(i, j) * scale.get(j);
+                res[i][j] = quaternionMatrix[i][j] * scale[j];
             }
         }
 
-        array[0][3] = position.get(0);
-        array[1][3] = position.get(1);
-        array[2][3] = position.get(2);
+        res[0][3] = position[0];
+        res[1][3] = position[1];
+        res[2][3] = position[2];
+        res[3][3] = 1;
 
-        array[3][3] = 1;
-
-        return new Matrix(array);
+        return res;
     }
 
-    Vector3 getUp() {
+    float[] getUp() {
         return rotation.getUp();
     }
-    Vector3 getForward() {
+    float[] getForward() {
         return rotation.getForward();
     }
-    Vector3 getRight() {
+    float[] getRight() {
         return rotation.getRight();
     }
 
     void reset() {
-        position = new Vector4(0, 0, 0, 1);
+        position = new float[]{0, 0, 0, 1};
         rotation = new Quaternion();
-        scale = new Vector3(1, 1, 1);
+        scale = new float[]{1, 1, 1};
     }
 }

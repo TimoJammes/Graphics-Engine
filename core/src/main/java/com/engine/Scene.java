@@ -2,7 +2,6 @@ package com.engine;
 
 import com.badlogic.gdx.graphics.Color;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -29,8 +28,8 @@ public abstract class Scene {
         boolean isUpdate = false;
         for(Entity entity : entities) {
             for(Behavior b: entity.behaviors) {
-                b.update(entity, dt);
-                isUpdate = true;
+                boolean updated = b.update(entity, dt);
+                isUpdate |= updated;
             }
         }
         return isUpdate;
@@ -104,8 +103,8 @@ class AnimalScene extends Scene {
         beaver3.rotateWorld(-Math.PI/2, 0, 1, 0);
         beaver4.rotateWorld(Math.PI/2, 0, 1, 0);
 
-        beaver1.behaviors.add(new RotateBehavior(Math.PI, new Vector3(0, 1, 0)));
-        beaver2.behaviors.add(new OscillateBehavior(1, new Vector3(0, 1, 0), (Vector3)beaver2.transform.position.slice(0, 3)));
+        beaver1.behaviors.add(new RotateBehavior(Math.PI, new float[]{0, 1, 0}));
+        beaver2.behaviors.add(new OscillateBehavior(1, new float[]{0, 1, 0}, Matrix.getSlice(beaver2.transform.position, 0, 3)));
 
         renderOptions.put(beaver1, new RenderOptions(RenderMode.SOLID, false, true));
         renderOptions.put(beaver2, new RenderOptions(RenderMode.SOLID, true, true));
@@ -149,16 +148,16 @@ class BenchMarkScene extends Scene {
     BenchMarkScene() {
         backgroundColor = Color.BLUE;
 
-        int numX = 6;
+        int numX = 1;
         int numY = numX;
 
-        for(int x = -numX/2; x < numX/2; x++) {
-            for(int y = -numY/2; y < numY/2; y++) {
+        for(int x = -numX/2; x < Math.max(1, numX/2); x++) {
+            for(int y = -numY/2; y < Math.max(1, numY/2); y++) {
                 Entity beaver = new Entity("OBJ-animals/animal-beaver.obj");
                 beaver.color = Color.BROWN;
-                beaver.setPos(x+.5f, y+.5f, -8);
-                beaver.behaviors.add(new RotateBehavior(Math.PI, new Vector3(0, 1, 0)));
-                beaver.behaviors.add(new OscillateBehavior(1, new Vector3(0, 1, 0), (Vector3)beaver.transform.position.slice(0, 3)));
+                beaver.setPos(x+.5f, y+.5f, -4);
+                beaver.behaviors.add(new RotateBehavior(Math.PI/4, new float[]{0, 1, 0}));
+//                beaver.behaviors.add(new OscillateBehavior(1, new float[]{0, 1, 0}, Matrix.getSlice(beaver.transform.position, 0, 3)));
                 renderOptions.put(beaver, new RenderOptions(RenderMode.SOLID, true, true));
                 entities.add(beaver);
             }

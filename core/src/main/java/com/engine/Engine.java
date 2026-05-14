@@ -32,7 +32,7 @@ public class Engine {
 
 //         renderer = new Renderer(shapeRenderer);
 
-         Vector4 camPos = new Vector4(0, 2, 0, 1);
+         float[] camPos = new float[]{0, 2, 0, 1};
          Quaternion camQ = new Quaternion();
 //         camQ.rotateWorld(-Math.PI/8, 1, 0, 0);
 

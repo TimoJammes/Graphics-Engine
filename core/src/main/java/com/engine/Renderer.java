@@ -4,11 +4,7 @@ import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.utils.ScreenUtils;
 
-//import java.util.ArrayList;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
-//import java.util.Comparator;
 
 
 public class Renderer {
@@ -28,7 +24,8 @@ public class Renderer {
     float[] avgZValues = new float[triangleOrder.length];
     Integer[] positions = new Integer[triangleOrder.length];
 
-    Vector4 frontV2 = null, intersectionV1 = null, intersectionV2 = null; //for SH-clipping with 1 negative-w vertex
+    float[] frontV2 = null, intersectionV1 = null, intersectionV2 = null; //for SH-clipping with 1 negative-w vertex
+    float[] screenFrontV2 = null, screenIntersection1 = null, screenIntersection2 = null;
 
     Renderer(ShapeRenderer shapeRenderer) {
         this.shapeRenderer = shapeRenderer;
@@ -36,8 +33,10 @@ public class Renderer {
 
     void renderScene(Scene scene, Camera camera) {
 
-        Matrix V = camera.getViewMatrix();
-        Matrix P = camera.getProjectionMatrix();
+        float[][] V = camera.getViewMatrix();
+        float[][] P = camera.getProjectionMatrix();
+
+        float[][] VP = Matrix.matmul(P, V);
 
         ScreenUtils.clear(scene.backgroundColor);
 
@@ -47,11 +46,11 @@ public class Renderer {
             switch (options.renderMode) {
                 case Scene.RenderMode.WIRE_FRAME:
 //                     wireFrameRender(scene, camera);
-                    wireFrameRender(entity, V, P);
+                    wireFrameRender(entity, VP);
                     break;
                 case Scene.RenderMode.SOLID:
 //                     solidRender(scene, camera);
-                    solidRender(entity, V, P, options);
+                    solidRender(entity, VP, options);
                     break;
                 default:
                     throw new IllegalStateException("Unsupported render mode");
@@ -61,33 +60,169 @@ public class Renderer {
         }
     }
 
-    void solidRender(Entity entity, Matrix V, Matrix P, RenderOptions options) {
+    void solidRender(Entity entity, float[][] VP, RenderOptions options) {
 
-        Matrix M = entity.transform.toMatrix();
-
-//        Matrix MV = V.matmul(M);
-        Matrix MVP = P.matmul(V.matmul(M));
+        float[][] MVP = Matrix.matmul(VP, entity.transform.toMatrix()); //Model-View-Projection Matrix
 
         final float[] vertices = entity.mesh.vertices;
-
         final int[] indices = entity.mesh.indices;
 
-        for (int i = 0; i < vertices.length / vertexStride; i++) {
+        computeClipVertices(vertices, MVP); //stores to clipVertices array
 
-            float x = vertices[i * vertexStride];
-            float y = vertices[i * vertexStride + 1];
-            float z = vertices[i * vertexStride + 2];
+        //culls triangles behind camera or out of frustum & stores triangle indices (first idx of triangle vertex index in indices) in triangleOrder
+        int triangleCount = cullOuterTriangles(indices);
 
-//            Vector4 viewSpaceV = (Vector4) MV.matmul(new Vector4(x, y, z, 1));
-            Vector4 clipSpaceV = (Vector4) MVP.matmul(new Vector4(x, y, z, 1));
+        computeAvgClipZ(triangleCount, indices); //stores to avgZValues
+
+        for (int i = 0; i < triangleCount; i++) positions[i] = i; //to sort triangles by avgZValues
+
+        Arrays.sort(positions, 0, triangleCount, (a, b) -> Float.compare(avgZValues[a], avgZValues[b]));
 
 
-            clipVertices[i * clipStride] = clipSpaceV.get(0);
-            clipVertices[i * clipStride + 1] = clipSpaceV.get(1);
-            clipVertices[i * clipStride + 2] = clipSpaceV.get(2);
-            clipVertices[i * clipStride + 3] = clipSpaceV.get(3);
+        if (!options.showWireFrame)
+            shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+
+        for (int i = 0; i < triangleCount; i++) {
+            int index = triangleOrder[positions[i]];
+
+
+            float[] clipV1 = getClipVertex(indices[index]);
+            float[] clipV2 = getClipVertex(indices[index+1]);
+            float[] clipV3 = getClipVertex(indices[index+2]);
+
+
+            //if 1 vertex behind camera, new triangle created with vertices screenFrontV2, screenIntersection1, screenIntersection2
+            //if 2 vertices behind camera, these are modified in place to become intersection vertices
+            screenFrontV2 = null; screenIntersection1 = null; screenIntersection2 = null;
+            shNearPlaneClip(clipV1, clipV2, clipV3);
+
+
+            float[] screenV1 = ndcToScreen(clipToNdc(clipV1));
+            float[] screenV2 = ndcToScreen(clipToNdc(clipV2));
+            float[] screenV3 = ndcToScreen(clipToNdc(clipV3));
+
+            setRenderColor(entity, options, indices[index]); //pass indices[index] for randomizeTexture
+
+            //draws 1 triangle (first triplet of vertices) or 2 if SH-clipping with 2 vertices behind camera (second triplet of vertices)
+            drawTriangles(options, screenV1, screenV2, screenV3, screenFrontV2, screenIntersection1, screenIntersection2);
         }
 
+        if (!options.showWireFrame)
+            shapeRenderer.end();
+    }
+
+    private void setRenderColor(Entity entity, RenderOptions options, int idx) {
+        Color color = entity.color;
+        if (options.randomizeTexture) {
+            float[] offsets = {0f, 0.03f, -0.03f, 0.06f, -0.06f};
+            float offset = offsets[idx % offsets.length];
+
+            color = new Color(
+                Math.clamp(entity.color.r + offset, 0, 1),
+                Math.clamp(entity.color.g + offset, 0, 1),
+                Math.clamp(entity.color.b + offset, 0, 1),
+                1f
+            );
+        }
+
+        shapeRenderer.setColor(color);
+    }
+
+    /**
+     * draws triangle connecting v1, v2, v3 by default.
+     * if 2 vertices were behind camera, 2 triangles drawn through Sutherland-Hodgman clipping wrt near-plane.
+     */
+    private void drawTriangles(RenderOptions options, float[] v1, float[] v2, float[] v3, float[] frontV2, float[] intersecV1, float[] intersecV2) {
+
+        if (options.showWireFrame)
+            shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+
+        shapeRenderer.triangle(
+            Matrix.getX(v1), Matrix.getY(v1),
+            Matrix.getX(v2), Matrix.getY(v2),
+            Matrix.getX(v3), Matrix.getY(v3)
+        );
+
+        if (frontV2 != null) //same as checking if intersectionV2 isnt null
+            shapeRenderer.triangle(
+                Matrix.getX(frontV2), Matrix.getY(frontV2),
+                Matrix.getX(intersecV1), Matrix.getY(intersecV1),
+                Matrix.getX(intersecV2), Matrix.getY(intersecV2)
+            );
+
+
+        if (options.showWireFrame) {
+            shapeRenderer.end();
+
+            shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
+            shapeRenderer.setColor(Color.BLACK);
+            shapeRenderer.line(
+                Matrix.getX(v1), Matrix.getY(v1),
+                Matrix.getX(v2), Matrix.getY(v2)
+            );
+            shapeRenderer.line(
+                Matrix.getX(v1), Matrix.getY(v1),
+                Matrix.getX(v3), Matrix.getY(v3)
+            );
+            shapeRenderer.line(
+                Matrix.getX(v2), Matrix.getY(v2),
+                Matrix.getX(v3), Matrix.getY(v3)
+            );
+            if (frontV2 != null) {
+                shapeRenderer.line(
+                    Matrix.getX(frontV2), Matrix.getY(frontV2),
+                    Matrix.getX(intersecV1), Matrix.getY(intersecV1)
+                );
+                shapeRenderer.line(
+                    Matrix.getX(frontV2), Matrix.getY(frontV2),
+                    Matrix.getX(intersecV2), Matrix.getY(intersecV2)
+                );
+                shapeRenderer.line(
+                    Matrix.getX(intersecV1), Matrix.getY(intersecV1),
+                    Matrix.getX(intersecV2), Matrix.getY(intersecV2)
+                );
+            }
+            shapeRenderer.end();
+        }
+    }
+    private void shNearPlaneClip(float[] clipV1, float[] clipV2, float[] clipV3) {
+        frontV2 = null; intersectionV1 = null; intersectionV2 = null;
+        int negWCount = 0;
+
+        if (Matrix.getW(clipV1) <= 0) negWCount++;
+        if (Matrix.getW(clipV2) <= 0) negWCount++;
+        if (Matrix.getW(clipV3) <= 0) negWCount++;
+
+        if (negWCount == 2) {
+            shCullingTwoBehind(clipV1, clipV2, clipV3);
+        }
+
+
+        if (negWCount == 1) {
+            shCullingOneBehind(clipV1, clipV2, clipV3); //assigns to frontV2, intersectionV1 & intersectionV2 directly
+        }
+
+        if (intersectionV2 != null) {
+            screenFrontV2 = ndcToScreen(clipToNdc(frontV2));
+            screenIntersection1 = ndcToScreen(clipToNdc(intersectionV1));
+            screenIntersection2 = ndcToScreen(clipToNdc(intersectionV2));
+        }
+    }
+    private float[] getClipVertex(int idx) {
+        return new float[]{
+            clipVertices[idx * clipStride],
+            clipVertices[idx * clipStride + 1],
+            clipVertices[idx * clipStride + 2],
+            clipVertices[idx * clipStride + 3]};
+    }
+
+    private void computeAvgClipZ(int triangleCount, int[] indices) {
+        for (int i = 0; i < triangleCount; i++) {
+            avgZValues[i] = avgZ(triangleOrder[i], indices);
+        }
+    }
+
+    private int cullOuterTriangles(int[] indices) {
         int triangleCount = 0;
         for (int i = 0; i < indices.length; i += 3) {
             int idx1 = indices[i];
@@ -108,156 +243,34 @@ public class Renderer {
 
             triangleOrder[triangleCount++] = i;  // only add visible triangles
         }
-
-
-        for (int i = 0; i < triangleCount; i++) {
-            avgZValues[i] = avgZ(triangleOrder[i], indices);
-        }
-
-
-        for (int i = 0; i < triangleCount; i++) positions[i] = i;
-
-        Arrays.sort(positions, 0, triangleCount, (a, b) -> Float.compare(avgZValues[a], avgZValues[b]));
-
-
-        if (!options.showWireFrame)
-            shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-
-        for (int i = 0; i < triangleCount; i++) {
-            int index = triangleOrder[positions[i]];
-
-            int idx1, idx2, idx3;
-            idx1 = indices[index];
-            idx2 = indices[index + 1];
-            idx3 = indices[index + 2];
-
-            Vector4 v1 = new Vector4(
-                clipVertices[idx1 * clipStride],
-                clipVertices[idx1 * clipStride + 1],
-                clipVertices[idx1 * clipStride + 2],
-                clipVertices[idx1 * clipStride + 3]);
-            Vector4 v2 = new Vector4(
-                clipVertices[idx2 * clipStride],
-                clipVertices[idx2 * clipStride + 1],
-                clipVertices[idx2 * clipStride + 2],
-                clipVertices[idx2 * clipStride + 3]);
-            Vector4 v3 = new Vector4(
-                clipVertices[idx3 * clipStride],
-                clipVertices[idx3 * clipStride + 1],
-                clipVertices[idx3 * clipStride + 2],
-                clipVertices[idx3 * clipStride + 3]);
-
-
-            int negWCount = 0;
-
-            if (v1.getW() <= 0) negWCount++;
-            if (v2.getW() <= 0) negWCount++;
-            if (v3.getW() <= 0) negWCount++;
-
-            if (negWCount == 2) {
-
-                shCullingTwoBehind(v1, v2, v3);
-            }
-
-            frontV2 = null; intersectionV1 = null; intersectionV2 = null;
-
-            if (negWCount == 1) {
-                shCullingOneBehind(v1, v2, v3); //assigns to frontV2, intersectionV1 & intersectionV2 directly
-            }
-
-            Vector2 screenV1 = ndcToScreen(clipToNdc(v1));
-            Vector2 screenV2 = ndcToScreen(clipToNdc(v2));
-            Vector2 screenV3 = ndcToScreen(clipToNdc(v3));
-
-            Vector2 screenFrontV2 = null, screenIntersection1 = null, screenIntersection2 = null;
-
-            if (intersectionV2 != null) {
-                screenFrontV2 = ndcToScreen(clipToNdc(frontV2));
-                screenIntersection1 = ndcToScreen(clipToNdc(intersectionV1));
-                screenIntersection2 = ndcToScreen(clipToNdc(intersectionV2));
-            }
-
-            if (options.showWireFrame)
-                shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-
-            Color color = entity.color;
-            if (options.randomizeTexture) {
-                float[] offsets = {0f, 0.03f, -0.03f, 0.06f, -0.06f};
-                float offset = offsets[idx1 % offsets.length];
-
-                color = new Color(
-                    Math.clamp(entity.color.r + offset, 0, 1),
-                    Math.clamp(entity.color.g + offset, 0, 1),
-                    Math.clamp(entity.color.b + offset, 0, 1),
-                    1f
-                );
-            }
-
-            shapeRenderer.setColor(color);
-
-            shapeRenderer.triangle(
-                screenV1.get(0), screenV1.get(1),
-                screenV2.get(0), screenV2.get(1),
-                screenV3.get(0), screenV3.get(1)
-            );
-
-            if (intersectionV2 != null)
-                shapeRenderer.triangle(
-                    screenFrontV2.get(0), screenFrontV2.get(1),
-                    screenIntersection1.get(0), screenIntersection1.get(1),
-                    screenIntersection2.get(0), screenIntersection2.get(1)
-                );
-
-
-            if (options.showWireFrame) {
-                shapeRenderer.end();
-
-                shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
-                shapeRenderer.setColor(Color.BLACK);
-                shapeRenderer.line(
-                    screenV1.get(0), screenV1.get(1),
-                    screenV2.get(0), screenV2.get(1)
-                );
-                shapeRenderer.line(
-                    screenV1.get(0), screenV1.get(1),
-                    screenV3.get(0), screenV3.get(1)
-                );
-                shapeRenderer.line(
-                    screenV2.get(0), screenV2.get(1),
-                    screenV3.get(0), screenV3.get(1)
-                );
-                if (intersectionV2 != null) {
-                    shapeRenderer.line(
-                        screenFrontV2.get(0), screenFrontV2.get(1),
-                        screenIntersection1.get(0), screenIntersection1.get(1)
-                    );
-                    shapeRenderer.line(
-                        screenFrontV2.get(0), screenFrontV2.get(1),
-                        screenIntersection2.get(0), screenIntersection2.get(1)
-                    );
-                    shapeRenderer.line(
-                        screenIntersection1.get(0), screenIntersection1.get(1),
-                        screenIntersection2.get(0), screenIntersection2.get(1)
-                    );
-                }
-                shapeRenderer.end();
-            }
-
-
-//            System.out.println("ba");
-        }
-        if (!options.showWireFrame)
-            shapeRenderer.end();
+        return triangleCount;
     }
 
-    private void shCullingOneBehind(Vector4 v1, Vector4 v2, Vector4 v3) {
-        Vector4 behindV, frontV1, frontV2;
+    private void computeClipVertices(float[] vertices, float[][] MVP) {
+        for (int i = 0; i < vertices.length / vertexStride; i++) {
 
-        if (v1.getW() <= 0) {
+            float x = vertices[i * vertexStride];
+            float y = vertices[i * vertexStride + 1];
+            float z = vertices[i * vertexStride + 2];
+
+            float[] clipSpaceV = Matrix.matmul(MVP, new float[]{x, y, z, 1});
+
+
+            clipVertices[i * clipStride] = Matrix.getX(clipSpaceV);
+            clipVertices[i * clipStride + 1] = Matrix.getY(clipSpaceV);
+            clipVertices[i * clipStride + 2] = Matrix.getZ(clipSpaceV);
+            clipVertices[i * clipStride + 3] = Matrix.getW(clipSpaceV);
+        }
+    }
+
+    private void shCullingOneBehind(float[] v1, float[] v2, float[] v3) {
+        float[] behindV, frontV1, frontV2;
+
+        if (Matrix.getW(v1) <= 0) {
             behindV = v1;
             frontV1 = v2;
             frontV2 = v3;
-        } else if (v2.getW() <= 0) {
+        } else if (Matrix.getW(v2) <= 0) {
             behindV = v2;
             frontV1 = v1;
             frontV2 = v3;
@@ -267,25 +280,26 @@ public class Renderer {
             frontV2 = v2;
         }
 
-        float t1 = frontV1.getW() / (frontV1.getW() - behindV.getW());
-        float t2 = frontV2.getW() / (frontV2.getW() - behindV.getW());
+        float t1 = Matrix.getW(frontV1) / (Matrix.getW(frontV1) - Matrix.getW(behindV));
+        float t2 = Matrix.getW(frontV2) / (Matrix.getW(frontV2) - Matrix.getW(behindV));
 
-        float intersectionX1 = frontV1.getX() + t1 * (behindV.getX() - frontV1.getX());
-        float intersectionY1 = frontV1.getY() + t1 * (behindV.getY() - frontV1.getY());
-        float intersectionZ1 = frontV1.getZ() + t1 * (behindV.getZ() - frontV1.getZ());
+        float intersectionX1 = Matrix.getX(frontV1) + t1 * (Matrix.getX(behindV) - Matrix.getX(frontV1));
+        float intersectionY1 = Matrix.getY(frontV1) + t1 * (Matrix.getY(behindV) - Matrix.getY(frontV1));
+        float intersectionZ1 = Matrix.getZ(frontV1) + t1 * (Matrix.getZ(behindV) - Matrix.getZ(frontV1));
 
-        float intersectionX2 = frontV2.getX() + t2 * (behindV.getX() - frontV2.getX());
-        float intersectionY2 = frontV2.getY() + t2 * (behindV.getY() - frontV2.getY());
-        float intersectionZ2 = frontV2.getZ() + t2 * (behindV.getZ() - frontV2.getZ());
+        float intersectionX2 = Matrix.getX(frontV2) + t2 * (Matrix.getX(behindV) - Matrix.getX(frontV2));
+        float intersectionY2 = Matrix.getY(frontV2) + t2 * (Matrix.getY(behindV) - Matrix.getY(frontV2));
+        float intersectionZ2 = Matrix.getZ(frontV2) + t2 * (Matrix.getZ(behindV) - Matrix.getZ(frontV2));
 
-        behindV.setX(intersectionX1);
-        behindV.setY(intersectionY1);
-        behindV.setZ(intersectionZ1);
-        behindV.setW(NEAR_PLANE_EPSILON);
 
-        Vector4 newVertex = new Vector4(intersectionX2,  intersectionY2, intersectionZ2, NEAR_PLANE_EPSILON);
+        Matrix.setX(behindV, intersectionX1);
+        Matrix.setY(behindV, intersectionY1);
+        Matrix.setZ(behindV, intersectionZ1);
+        Matrix.setW(behindV, NEAR_PLANE_EPSILON);
 
-//        List<Vector4> res = new ArrayList<>();
+        float[] newVertex = new float[]{intersectionX2,  intersectionY2, intersectionZ2, NEAR_PLANE_EPSILON};
+
+//        List<float[]> res = new ArrayList<>();
         this.frontV2 = frontV2;
         intersectionV1 = behindV;
         intersectionV2 = newVertex;
@@ -293,14 +307,14 @@ public class Renderer {
 //        return res;
     }
 
-    private static void shCullingTwoBehind(Vector4 v1, Vector4 v2, Vector4 v3) {
-        Vector4 frontV, behindV1, behindV2;
+    private static void shCullingTwoBehind(float[] v1, float[] v2, float[] v3) {
+        float[] frontV, behindV1, behindV2;
 
-        if (v1.getW() > 0) {
+        if (Matrix.getW(v1) > 0) {
             frontV = v1;
             behindV1 = v2;
             behindV2 = v3;
-        } else if (v2.getW() > 0) {
+        } else if (Matrix.getW(v2) > 0) {
             frontV = v2;
             behindV1 = v1;
             behindV2 = v3;
@@ -310,28 +324,26 @@ public class Renderer {
             behindV2 = v2;
         }
 
-        float t1 = frontV.getW() / (frontV.getW() - behindV1.getW());
-        float t2 = frontV.getW() / (frontV.getW() - behindV2.getW());
+        float t1 = Matrix.getW(frontV) / (Matrix.getW(frontV) - Matrix.getW(behindV1));
+        float t2 = Matrix.getW(frontV) / (Matrix.getW(frontV) - Matrix.getW(behindV2));
 
-        float intersectionX1 = frontV.getX() + t1 * (behindV1.getX() - frontV.getX());
-        float intersectionY1 = frontV.getY() + t1 * (behindV1.getY() - frontV.getY());
-        float intersectionZ1 = frontV.getZ() + t1 * (behindV1.getZ() - frontV.getZ());
-        float intersectionW1 = NEAR_PLANE_EPSILON;
+        float intersectionX1 = Matrix.getX(frontV) + t1 * (Matrix.getX(behindV1) - Matrix.getX(frontV));
+        float intersectionY1 = Matrix.getY(frontV) + t1 * (Matrix.getY(behindV1) - Matrix.getY(frontV));
+        float intersectionZ1 = Matrix.getZ(frontV) + t1 * (Matrix.getZ(behindV1) - Matrix.getZ(frontV));
 
-        float intersectionX2 = frontV.getX() + t2 * (behindV2.getX() - frontV.getX());
-        float intersectionY2 = frontV.getY() + t2 * (behindV2.getY() - frontV.getY());
-        float intersectionZ2 = frontV.getZ() + t2 * (behindV2.getZ() - frontV.getZ());
-        float  intersectionW2 = NEAR_PLANE_EPSILON;
+        float intersectionX2 = Matrix.getX(frontV) + t2 * (Matrix.getX(behindV2) - Matrix.getX(frontV));
+        float intersectionY2 = Matrix.getY(frontV) + t2 * (Matrix.getY(behindV2) - Matrix.getY(frontV));
+        float intersectionZ2 = Matrix.getZ(frontV) + t2 * (Matrix.getZ(behindV2) - Matrix.getZ(frontV));
 
-        behindV1.setX(intersectionX1);
-        behindV1.setY(intersectionY1);
-        behindV1.setZ(intersectionZ1);
-        behindV1.setW(intersectionW1);
+        Matrix.setX(behindV1, intersectionX1);
+        Matrix.setY(behindV1, intersectionY1);
+        Matrix.setZ(behindV1, intersectionZ1);
+        Matrix.setW(behindV1, NEAR_PLANE_EPSILON);
 
-        behindV2.setX(intersectionX2);
-        behindV2.setY(intersectionY2);
-        behindV2.setZ(intersectionZ2);
-        behindV2.setW(intersectionW2);
+        Matrix.setX(behindV2, intersectionX2);
+        Matrix.setY(behindV2, intersectionY2);
+        Matrix.setZ(behindV2, intersectionZ2);
+        Matrix.setW(behindV2, NEAR_PLANE_EPSILON);
     }
 
     boolean inFrustum(int idx) {
@@ -343,13 +355,11 @@ public class Renderer {
     }
 
 
-    void wireFrameRender(Entity entity, Matrix V, Matrix P) {
+    void wireFrameRender(Entity entity, float[][] VP) {
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
         shapeRenderer.setColor(entity.color);
 
-//        Matrix VP = P.matmul(V);
-
-        Matrix MVP = P.matmul(V).matmul(entity.transform.toMatrix());
+        float[][] MVP = Matrix.matmul(VP, entity.transform.toMatrix());
 
         final float[] vertices = entity.mesh.vertices;
 
@@ -371,48 +381,47 @@ public class Renderer {
 
             //TODO Sutherland-Hodgman clipping
 
-            Vector4 clipSpaceV1 = (Vector4) MVP.matmul(new Vector4(x1, y1, z1, 1));
-            Vector4 clipSpaceV2 = (Vector4) MVP.matmul(new Vector4(x2, y2, z2, 1));
+            float[] clipSpaceV1 = Matrix.matmul(MVP, new float[]{x1, y1, z1, 1});
+            float[] clipSpaceV2 = Matrix.matmul(MVP, new float[]{x2, y2, z2, 1});
 
+            if (Matrix.getW(clipSpaceV1) <= 0 && Matrix.getW(clipSpaceV2) <= 0) continue;
 
-            if (clipSpaceV1.get(3) <= 0 && clipSpaceV2.get(3) <= 0) continue;
-
-            Vector3 ndcSpaceV1 = clipToNdc(clipSpaceV1);
-            Vector3 ndcSpaceV2 = clipToNdc(clipSpaceV2);
+            float[] ndcSpaceV1 = clipToNdc(clipSpaceV1);
+            float[] ndcSpaceV2 = clipToNdc(clipSpaceV2);
 
 
             if (!inNDC(ndcSpaceV1) && !inNDC(ndcSpaceV2)) continue;
 
-            Vector2 screenV1 = ndcToScreen(ndcSpaceV1);
-            Vector2 screenV2 = ndcToScreen(ndcSpaceV2);
+            float[] screenV1 = ndcToScreen(ndcSpaceV1);
+            float[] screenV2 = ndcToScreen(ndcSpaceV2);
 
             shapeRenderer.line(
-                screenV1.get(0), screenV1.get(1),
-                screenV2.get(0), screenV2.get(1)
+                Matrix.getX(screenV1), Matrix.getY(screenV1),
+                Matrix.getX(screenV2), Matrix.getY(screenV2)
             );
         }
 
         shapeRenderer.end();
     }
 
-    boolean inNDC(Vector3 v) {
-        return v.get(0) >= -1 && v.get(0) <= 1 && v.get(1) >= -1 && v.get(1) <= 1;
+    boolean inNDC(float[] v) {
+        return Matrix.getX(v) >= -1 && Matrix.getX(v) <= 1 && Matrix.getY(v) >= -1 && Matrix.getY(v) <= 1;
     }
 
-    final Vector3 clipToNdc(Vector4 clipSpaceV) {
-        final float w = clipSpaceV.get(3);
-        final float ndcX = clipSpaceV.get(0) / w;
-        final float ndcY = clipSpaceV.get(1) / w;
-        final float ndcZ = clipSpaceV.get(2) / w;
+    final float[] clipToNdc(float[] clipSpaceV) {
+        final float w = Matrix.getW(clipSpaceV);
+        final float ndcX = Matrix.getX(clipSpaceV) / w;
+        final float ndcY = Matrix.getY(clipSpaceV) / w;
+        final float ndcZ = Matrix.getZ(clipSpaceV) / w;
 
-        return new Vector3(ndcX, ndcY, ndcZ);
+        return new float[]{ndcX, ndcY, ndcZ};
     }
 
-    final Vector2 ndcToScreen(Vector3 ndcSpaceV) {
-        final float screenX = (ndcSpaceV.get(0) + 1) / 2 * Main.SCREEN_WIDTH;
-        final float screenY = (ndcSpaceV.get(1) + 1) / 2 * Main.SCREEN_HEIGHT;
+    final float[] ndcToScreen(float[] ndcSpaceV) {
+        final float screenX = (Matrix.getX(ndcSpaceV) + 1) / 2 * Main.SCREEN_WIDTH;
+        final float screenY = (Matrix.getY(ndcSpaceV) + 1) / 2 * Main.SCREEN_HEIGHT;
 
-        return new Vector2(screenX, screenY);
+        return new float[]{screenX, screenY};
     }
 
     final float avgZ(int index, int[] indices) {

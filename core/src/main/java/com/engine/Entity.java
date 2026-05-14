@@ -9,13 +9,13 @@ import java.util.List;
 
 public class Entity implements Movable {
 
-     final Transform transform;
-     final Mesh mesh;
-     Color color;
+    final Transform transform;
+    final Mesh mesh;
+    Color color;
 
-     List<Behavior> behaviors = new ArrayList<>();
+    List<Behavior> behaviors = new ArrayList<>();
 
-     String name;
+    String name;
 
     public Entity(Transform transform, Mesh mesh, Color color) {
         this.transform = transform;
@@ -43,19 +43,21 @@ public class Entity implements Movable {
     }
 
     public void setPos(float x, float y, float z) {
-        transform.position.set(0, x);
-        transform.position.set(1, y);
-        transform.position.set(2, z);
+        transform.position[0] = x;
+        transform.position[1] = y;
+        transform.position[2] = z;
     }
+
     public void setScale(float x, float y, float z) {
-        transform.scale.set(0, x);
-        transform.scale.set(1, y);
-        transform.scale.set(2, z);
+        transform.scale[0] = x;
+        transform.scale[1] = y;
+        transform.scale[2] = z;
     }
 
     public void rotateLocal(double theta, float ax, float ay, float az) {
         transform.rotation.rotateLocal(theta, ax, ay, az);
     }
+
     public void rotateWorld(double theta, float ax, float ay, float az) {
         transform.rotation.rotateWorld(theta, ax, ay, az);
     }
@@ -67,6 +69,10 @@ public class Entity implements Movable {
     public void translateLocal(float dx, float dy, float dz) {
         transform.translateLocal(dx, dy, dz);
     }
+
+    public double angleAroundAxis(float ax,  float ay, float az) {
+        return transform.rotation.angleAroundAxis(ax, ay, az);
+    }
 }
 
 class GroundEntity extends Entity {
@@ -74,23 +80,23 @@ class GroundEntity extends Entity {
 
     GroundEntity(Color color, int tilesX, int tilesY) {
 
-        float[] vertices = new float[tilesX*tilesY*3];
+        float[] vertices = new float[tilesX * tilesY * 3];
 
         for (int i = 0; i < tilesX; i++) {
             for (int j = 0; j < tilesY; j++) {
-                vertices[(i*tilesY+j)*3] = i - tilesX/2f;
-                vertices[(i*tilesY+j)*3+2] = j - tilesY/2f;
+                vertices[(i * tilesY + j) * 3] = i - tilesX / 2f;
+                vertices[(i * tilesY + j) * 3 + 2] = j - tilesY / 2f;
             }
         }
 
-        int[] indices = new int[(tilesX-1)*(tilesY-1)*6];
+        int[] indices = new int[(tilesX - 1) * (tilesY - 1) * 6];
         int idx = 0;
-        for (int i = 0; i < tilesX-1; i++) {
-            for (int j = 0; j < tilesY-1; j++) {
-                int tl = i*tilesY + j;
-                int tr = i*tilesY + j+1;
-                int bl = (i+1)*tilesY + j;
-                int br = (i+1)*tilesY + j+1;
+        for (int i = 0; i < tilesX - 1; i++) {
+            for (int j = 0; j < tilesY - 1; j++) {
+                int tl = i * tilesY + j;
+                int tr = i * tilesY + j + 1;
+                int bl = (i + 1) * tilesY + j;
+                int br = (i + 1) * tilesY + j + 1;
 
                 indices[idx++] = tl;
                 indices[idx++] = bl;

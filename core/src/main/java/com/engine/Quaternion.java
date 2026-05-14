@@ -17,7 +17,7 @@ public class Quaternion{
         this(1, 0, 0, 0);
     }
 
-     Matrix toMatrix() {
+     float[][] toMatrix() {
         float[][] m = new float[3][3];
 
         m[0][0] = 1 - 2*(y*y + z*z);
@@ -32,7 +32,7 @@ public class Quaternion{
         m[2][1] = 2*(y*z + w*x);
         m[2][2] = 1 - 2*(x*x + y*y);
 
-        return new Matrix(m);
+        return m;
     }
 
     void rotateLocal(double theta, float ax, float ay, float az) {
@@ -41,10 +41,12 @@ public class Quaternion{
         ay /= (float) l;
         az /= (float) l;
 
+        float sinHalfTheta = (float) Math.sin(theta/2);
+
         float deltaW = (float) Math.cos(theta/2);
-        float deltaX = (float) (Math.sin(theta/2) * ax);
-        float deltaY = (float) (Math.sin(theta/2) * ay);
-        float deltaZ = (float) (Math.sin(theta/2) * az);
+        float deltaX = sinHalfTheta * ax;
+        float deltaY = sinHalfTheta * ay;
+        float deltaZ = sinHalfTheta * az;
 
         float[] newQCoords = this.mul(deltaW, deltaX, deltaY, deltaZ);
 
@@ -62,10 +64,12 @@ public class Quaternion{
         ay /= (float) l;
         az /= (float) l;
 
+        float sinHalfTheta = (float) Math.sin(theta/2);
+
         float deltaW = (float) Math.cos(theta/2);
-        float deltaX = (float) (Math.sin(theta/2) * ax);
-        float deltaY = (float) (Math.sin(theta/2) * ay);
-        float deltaZ = (float) (Math.sin(theta/2) * az);
+        float deltaX = sinHalfTheta * ax;
+        float deltaY = sinHalfTheta * ay;
+        float deltaZ = sinHalfTheta * az;
 
         Quaternion deltaQ = new  Quaternion(deltaW, deltaX, deltaY, deltaZ);
 
@@ -80,10 +84,10 @@ public class Quaternion{
 
     }
 
-    Vector4 rotate(float x, float y, float z) {
+    float[] rotate(float x, float y, float z) {
          Quaternion pureQ = new Quaternion(0, x, y, z);
          pureQ = rotate(pureQ);
-         return new Vector4(pureQ.x, pureQ.y, pureQ.z, 0);
+         return new float[]{pureQ.x, pureQ.y, pureQ.z, 0};
     }
     Quaternion rotate(Quaternion q) {
 
@@ -120,15 +124,49 @@ public class Quaternion{
          z /= (float) l;
     }
 
-    Vector3 getRight() {
-         return (Vector3) rotate(1, 0 ,0).slice(0, 3);
+    float[] getRight() {
+         return Matrix.getSlice(rotate(1, 0, 0), 0, 3);
     }
 
-    Vector3 getUp() {
-         return  (Vector3) rotate(0, 1 ,0).slice(0, 3);
+    float[] getUp() {
+        return Matrix.getSlice(rotate(0, 1, 0), 0, 3);
     }
-    Vector3 getForward() {
-         return  (Vector3) rotate(0, 0 ,-1).slice(0, 3);
+    float[] getForward() {
+        return Matrix.getSlice(rotate(0, 0, -1), 0, 3);
+    }
+
+    public double angleAroundAxis(float ax, float ay, float az) {
+        // Project vector part onto axis
+        float dot = x * ax + y * ay + z * az;
+        float vpx = dot * ax;
+        float vpy = dot * ay;
+        float vpz = dot * az;
+
+        // Build twist quaternion
+        float tw = w, tx = vpx, ty = vpy, tz = vpz;
+
+        // Normalize it
+        float len = (float) Math.sqrt(tw*tw + tx*tx + ty*ty + tz*tz);
+        if (len < 1e-10f) return 0f;
+        tw /= len; tx /= len; ty /= len; tz /= len;
+
+        // Extract angle
+        double angle = 2 * Math.atan2(Math.sqrt(tx*tx + ty*ty + tz*tz), tw);
+
+        // Fix sign
+        if (dot < 0) angle = -angle;
+
+        double TWO_PI = 2* Math.PI;
+        angle = ((angle % TWO_PI) + TWO_PI) % TWO_PI;
+
+        return angle; // in radians
+    }
+
+    static float angleDelta(float a, float b) {
+        float diff = b - a;
+        // wrap to [-π, π]
+        diff = (float) Math.atan2(Math.sin(diff), Math.cos(diff));
+        return diff;
     }
 }
 
