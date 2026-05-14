@@ -112,7 +112,7 @@ class AnimalScene extends Scene {
         renderOptions.put(beaver3, new RenderOptions(RenderMode.SOLID, true, false));
         renderOptions.put(beaver4, new RenderOptions(RenderMode.WIRE_FRAME, false, false));
 
-        Entity ground = new GroundEntity(Color.GREEN, 10, 10);
+        Entity ground = new GroundEntity(Color.GREEN, 10, 20);
 
         float scale = 2f;
         ground.setScale(scale, scale, scale);
@@ -145,6 +145,26 @@ class GroundScene extends Scene {
     }
 }
 
+class BenchMarkScene extends Scene {
+    BenchMarkScene() {
+        backgroundColor = Color.BLUE;
+
+        int numX = 6;
+        int numY = numX;
+
+        for(int x = -numX/2; x < numX/2; x++) {
+            for(int y = -numY/2; y < numY/2; y++) {
+                Entity beaver = new Entity("OBJ-animals/animal-beaver.obj");
+                beaver.color = Color.BROWN;
+                beaver.setPos(x+.5f, y+.5f, -8);
+                beaver.behaviors.add(new RotateBehavior(Math.PI, new Vector3(0, 1, 0)));
+                beaver.behaviors.add(new OscillateBehavior(1, new Vector3(0, 1, 0), (Vector3)beaver.transform.position.slice(0, 3)));
+                renderOptions.put(beaver, new RenderOptions(RenderMode.SOLID, true, true));
+                entities.add(beaver);
+            }
+        }
+    }
+}
 class RenderOptions {
     Scene.RenderMode renderMode;
     boolean randomizeTexture;
