@@ -12,7 +12,7 @@ public class Transform {
     }
 
     Transform() {
-        this.position = new Vector4(0, 0, 0, 0);
+        this.position = new Vector4(0, 0, 0, 1);
         this.scale = new Vector3(1, 1, 1);
         this.rotation = new Quaternion();
     }

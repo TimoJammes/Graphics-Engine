@@ -74,23 +74,23 @@ class GroundEntity extends Entity {
 
     GroundEntity(Color color, int tilesX, int tilesY) {
 
-        float[] vertices = new float[tilesX*tilesX*3];
+        float[] vertices = new float[tilesX*tilesY*3];
 
         for (int i = 0; i < tilesX; i++) {
-            for (int j = 0; j < tilesX; j++) {
-                vertices[(i*tilesX+j)*3] = i - tilesX/2f;
-                vertices[(i*tilesX+j)*3+2] = j - tilesX/2f;
+            for (int j = 0; j < tilesY; j++) {
+                vertices[(i*tilesY+j)*3] = i - tilesX/2f;
+                vertices[(i*tilesY+j)*3+2] = j - tilesY/2f;
             }
         }
 
-        int[] indices = new int[(tilesX-1)*(tilesX-1)*6];
+        int[] indices = new int[(tilesX-1)*(tilesY-1)*6];
         int idx = 0;
         for (int i = 0; i < tilesX-1; i++) {
-            for (int j = 0; j < tilesX-1; j++) {
-                int tl = i*tilesX + j;
-                int tr = i*tilesX + j+1;
-                int bl = (i+1)*tilesX + j;
-                int br = (i+1)*tilesX + j+1;
+            for (int j = 0; j < tilesY-1; j++) {
+                int tl = i*tilesY + j;
+                int tr = i*tilesY + j+1;
+                int bl = (i+1)*tilesY + j;
+                int br = (i+1)*tilesY + j+1;
 
                 indices[idx++] = tl;
                 indices[idx++] = bl;

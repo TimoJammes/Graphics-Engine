@@ -15,15 +15,20 @@ public class Renderer {
 
     private final ShapeRenderer shapeRenderer;
 
-    private static final float NEAR_PLANE_EPSILON = 0.0001f;
+    private static final float NEAR_PLANE_EPSILON = 0.01f;
 
     private static final int MAX_VERTICES = 1_000_000;
     private static final int clipStride = 4; //stride of 4 to store w (4th coord) of vertices (clip w = -view z)
 
     private static final int vertexStride = 3;
 
+    //solidRender pre-alloc
     private final float[] clipVertices = new float[MAX_VERTICES * clipStride];
-    private final Integer[] triangleOrder = new Integer[MAX_VERTICES * 2];
+    private final int[] triangleOrder = new int[MAX_VERTICES * 2];
+    float[] avgZValues = new float[triangleOrder.length];
+    Integer[] positions = new Integer[triangleOrder.length];
+
+    Vector4 frontV2 = null, intersectionV1 = null, intersectionV2 = null; //for SH-clipping with 1 negative-w vertex
 
     Renderer(ShapeRenderer shapeRenderer) {
         this.shapeRenderer = shapeRenderer;
@@ -55,30 +60,6 @@ public class Renderer {
 
         }
     }
-
-//     final void wireFrameRender(Scene scene, Camera camera) {
-//        Matrix VP = camera.getProjectionMatrix().matmul(camera.getViewMatrix());
-//
-//        shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
-//        for (Entity entity : scene.entities) {
-//            wireFrameRender(entity, VP);
-//        }
-//        shapeRenderer.end();
-//    }
-
-//     final void solidRender(Scene scene, Camera camera) {
-//
-//         Matrix V = camera.getViewMatrix();
-//        Matrix P = camera.getProjectionMatrix();
-//
-////        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-//        for (Entity entity : scene.entities) {
-//            solidRender(entity, V, P, scene.showWireFrame.getOrDefault(entity, true));
-////            wireFrameRender(entity, VP, Color.BLACK);
-//        }
-
-    /// /        shapeRenderer.end();
-//    }
 
     void solidRender(Entity entity, Matrix V, Matrix P, RenderOptions options) {
 
@@ -117,31 +98,33 @@ public class Renderer {
             float w2 = clipVertices[idx2 * 4 + 3];
             float w3 = clipVertices[idx3 * 4 + 3];
 
-            //TODO Sutherland-Hodgman clipping
-
-
             // behind camera check
             if (w1 <= 0 && w2 <= 0 && w3 <= 0) continue;
 //            if (w1 <= 0 || w2 <= 0 || w3 <= 0) continue;
 
             // basic NDC bounds check
-            if (!inFrustum(idx1) && !inFrustum(idx2) && !inFrustum(idx3)) continue;
+            if (w1 > 0 && w2 > 0 && w3 > 0 && !inFrustum(idx1) && !inFrustum(idx2) && !inFrustum(idx3)) continue;
 //            if (!inFrustum(idx1) || !inFrustum(idx2) || !inFrustum(idx3)) continue;
 
             triangleOrder[triangleCount++] = i;  // only add visible triangles
         }
 
-        Arrays.sort(triangleOrder, 0, triangleCount, (a, b) -> {
-            float zA = avgZ(a, indices);
-            float zB = avgZ(b, indices);
-            return Float.compare(zA, zB);
-        });
+
+        for (int i = 0; i < triangleCount; i++) {
+            avgZValues[i] = avgZ(triangleOrder[i], indices);
+        }
+
+
+        for (int i = 0; i < triangleCount; i++) positions[i] = i;
+
+        Arrays.sort(positions, 0, triangleCount, (a, b) -> Float.compare(avgZValues[a], avgZValues[b]));
+
 
         if (!options.showWireFrame)
             shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
 
         for (int i = 0; i < triangleCount; i++) {
-            int index = triangleOrder[i];
+            int index = triangleOrder[positions[i]];
 
             int idx1, idx2, idx3;
             idx1 = indices[index];
@@ -176,29 +159,22 @@ public class Renderer {
                 shCullingTwoBehind(v1, v2, v3);
             }
 
-            Vector4 frontV1 = null, frontV2 = null, newV = null;
+            frontV2 = null; intersectionV1 = null; intersectionV2 = null;
 
             if (negWCount == 1) {
-
-
-                List<Vector4> res = shCullingOneBehind(v1, v2, v3);
-
-                frontV1 = res.get(0);
-                frontV2 = res.get(1);
-                newV = res.get(2);
-
+                shCullingOneBehind(v1, v2, v3); //assigns to frontV2, intersectionV1 & intersectionV2 directly
             }
 
             Vector2 screenV1 = ndcToScreen(clipToNdc(v1));
             Vector2 screenV2 = ndcToScreen(clipToNdc(v2));
             Vector2 screenV3 = ndcToScreen(clipToNdc(v3));
 
-            Vector2 screenFrontV1 = null, screenFrontV2 = null, screenNewV = null;
+            Vector2 screenFrontV2 = null, screenIntersection1 = null, screenIntersection2 = null;
 
-            if (newV != null) {
-                screenFrontV1 = ndcToScreen(clipToNdc(frontV1));
+            if (intersectionV2 != null) {
                 screenFrontV2 = ndcToScreen(clipToNdc(frontV2));
-                screenNewV = ndcToScreen(clipToNdc(newV));
+                screenIntersection1 = ndcToScreen(clipToNdc(intersectionV1));
+                screenIntersection2 = ndcToScreen(clipToNdc(intersectionV2));
             }
 
             if (options.showWireFrame)
@@ -225,11 +201,11 @@ public class Renderer {
                 screenV3.get(0), screenV3.get(1)
             );
 
-            if (newV != null)
+            if (intersectionV2 != null)
                 shapeRenderer.triangle(
-                    screenFrontV1.get(0), screenFrontV1.get(1),
                     screenFrontV2.get(0), screenFrontV2.get(1),
-                    screenNewV.get(0), screenNewV.get(1)
+                    screenIntersection1.get(0), screenIntersection1.get(1),
+                    screenIntersection2.get(0), screenIntersection2.get(1)
                 );
 
 
@@ -250,18 +226,18 @@ public class Renderer {
                     screenV2.get(0), screenV2.get(1),
                     screenV3.get(0), screenV3.get(1)
                 );
-                if (newV != null) {
+                if (intersectionV2 != null) {
                     shapeRenderer.line(
-                        screenFrontV1.get(0), screenFrontV1.get(1),
-                        screenFrontV2.get(0), screenFrontV2.get(1)
-                    );
-                    shapeRenderer.line(
-                        screenFrontV1.get(0), screenFrontV1.get(1),
-                        screenNewV.get(0), screenNewV.get(1)
+                        screenFrontV2.get(0), screenFrontV2.get(1),
+                        screenIntersection1.get(0), screenIntersection1.get(1)
                     );
                     shapeRenderer.line(
                         screenFrontV2.get(0), screenFrontV2.get(1),
-                        screenNewV.get(0), screenNewV.get(1)
+                        screenIntersection2.get(0), screenIntersection2.get(1)
+                    );
+                    shapeRenderer.line(
+                        screenIntersection1.get(0), screenIntersection1.get(1),
+                        screenIntersection2.get(0), screenIntersection2.get(1)
                     );
                 }
                 shapeRenderer.end();
@@ -274,7 +250,7 @@ public class Renderer {
             shapeRenderer.end();
     }
 
-    private static List<Vector4> shCullingOneBehind(Vector4 v1, Vector4 v2, Vector4 v3) {
+    private void shCullingOneBehind(Vector4 v1, Vector4 v2, Vector4 v3) {
         Vector4 behindV, frontV1, frontV2;
 
         if (v1.getW() <= 0) {
@@ -309,12 +285,12 @@ public class Renderer {
 
         Vector4 newVertex = new Vector4(intersectionX2,  intersectionY2, intersectionZ2, NEAR_PLANE_EPSILON);
 
-        List<Vector4> res = new ArrayList<>();
-        res.add(frontV1);
-        res.add(frontV2);
-        res.add(newVertex);
+//        List<Vector4> res = new ArrayList<>();
+        this.frontV2 = frontV2;
+        intersectionV1 = behindV;
+        intersectionV2 = newVertex;
 
-        return res;
+//        return res;
     }
 
     private static void shCullingTwoBehind(Vector4 v1, Vector4 v2, Vector4 v3) {
@@ -442,9 +418,9 @@ public class Renderer {
     final float avgZ(int index, int[] indices) {
         float z1, z2, z3;
 
-        z1 = -clipVertices[indices[index] * clipStride + 2];
-        z2 = -clipVertices[(indices[index + 1]) * clipStride + 2];
-        z3 = -clipVertices[(indices[index + 2]) * clipStride + 2];
+        z1 = -clipVertices[indices[index] * clipStride + 3];
+        z2 = -clipVertices[(indices[index + 1]) * clipStride + 3];
+        z3 = -clipVertices[(indices[index + 2]) * clipStride + 3];
 
         return (z1 + z2 + z3) / 3f;
     }
