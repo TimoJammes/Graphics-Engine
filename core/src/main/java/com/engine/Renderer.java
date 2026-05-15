@@ -9,23 +9,26 @@ import java.util.Arrays;
 
 public class Renderer {
 
+    private static final RenderOptions DEFAULT_RENDER_OPTIONS = new RenderOptions();
     private final ShapeRenderer shapeRenderer;
 
     private static final float NEAR_PLANE_EPSILON = 0.01f;
 
-    private static final int MAX_VERTICES = 1_000_000;
-    private static final int MAX_TRIANGLES = MAX_VERTICES * 2;
+//    private static final int MAX_VERTICES = 1_000_000;
+//    private static final int MAX_TRIANGLES = MAX_VERTICES * 2;
     private static final int clipStride = 4; //stride of 4 to store w (4th coord) of vertices (clip w = -view z)
 
     private static final int vertexStride = 3;
 
     //solidRender pre-alloc
-    private final float[] vertexBuffer = new float[MAX_VERTICES * clipStride];
-    private final int[] triangleOrder = new int[MAX_VERTICES * 2];
-    float[] avgZBuffer = new float[triangleOrder.length];
-    Integer[] positions = new Integer[triangleOrder.length];
-    private final int[] postClipIndices = new int[MAX_TRIANGLES * 2 * 3]; // * 2 for clipping, * 3 for 3 vertex indices
-    private final float[] screenVerticesBuffer = new float[MAX_TRIANGLES * 2 * 2 * 3]; //*2 for possible extra triangle from SH clipping, *2 for x and y, *3 for 3 vertices per triangle
+    private float[] vertexBuffer;// = new float[MAX_VERTICES * clipStride];
+    private int[] triangleOrder;// = new int[MAX_TRIANGLES];
+    float[] avgZBuffer;// = new float[MAX_TRIANGLES];
+    Integer[] positions;// = new Integer[MAX_TRIANGLES];
+    private int[] postClipIndices;// = new int[MAX_TRIANGLES * 2 * 3]; // * 2 for clipping, * 3 for 3 vertex indices
+    private float[] screenVerticesBuffer;// = new float[MAX_TRIANGLES * 2 * 2 * 3]; //*2 for possible extra triangle from SH clipping, *2 for x and y, *3 for 3 vertices per triangle
+
+    private int currentMaxVertices = 0;
 
     Renderer(ShapeRenderer shapeRenderer) {
         this.shapeRenderer = shapeRenderer;
@@ -41,7 +44,7 @@ public class Renderer {
         ScreenUtils.clear(scene.backgroundColor);
 
         for (Entity entity : scene.entities) {
-            RenderOptions options = scene.renderOptions.getOrDefault(entity, new RenderOptions());
+            RenderOptions options = scene.renderOptions.getOrDefault(entity, DEFAULT_RENDER_OPTIONS);
 
             switch (options.renderMode) {
                 case Scene.RenderMode.WIRE_FRAME:
@@ -58,8 +61,21 @@ public class Renderer {
         }
     }
 
+    private void ensureCapacity(int vertexCount) {
+        if (vertexCount <= currentMaxVertices) return;
+        currentMaxVertices = vertexCount;
+        vertexBuffer = new float[currentMaxVertices * 5 * clipStride];
+        triangleOrder = new int[currentMaxVertices * 2];
+        avgZBuffer = new float[currentMaxVertices * 2];
+        positions = new Integer[currentMaxVertices * 2];
+        postClipIndices = new int[currentMaxVertices * 4 * 3];
+        screenVerticesBuffer = new float[currentMaxVertices * 4 * 3 * 2];
+    }
+
     void solidRender(Entity entity, float[][] VP, RenderOptions options) {
 
+        ensureCapacity(entity.mesh.vertices.length / vertexStride);
+//        System.out.println(currentMaxVertices);
         float[][] MVP = Matrix.matmul(VP, entity.transform.toMatrix()); //Model-View-Projection Matrix
 
         final float[] vertices = entity.mesh.vertices;
@@ -212,7 +228,7 @@ public class Renderer {
 
         for (int i = 0; i < postClipTriangleCount; i++) {
 
-            for(int j=0; j < 3; j++) {
+            for (int j = 0; j < 3; j++) {
                 int idx = postClipIndices[i * 3 + j];
 
                 final float w = vertexBuffer[idx * clipStride + 3];
@@ -222,8 +238,8 @@ public class Renderer {
                 final float screenX = (ndcX + 1) / 2 * Main.SCREEN_WIDTH;
                 final float screenY = (ndcY + 1) / 2 * Main.SCREEN_HEIGHT;
 
-                screenVerticesBuffer[(i*3+j)*2] = screenX;
-                screenVerticesBuffer[(i*3+j)*2+1] = screenY;
+                screenVerticesBuffer[(i * 3 + j) * 2] = screenX;
+                screenVerticesBuffer[(i * 3 + j) * 2 + 1] = screenY;
             }
         }
         if (!options.showWireFrame)
@@ -232,15 +248,14 @@ public class Renderer {
 
         for (int i = 0; i < postClipTriangleCount; i++) {
 
-            float screenX1 = screenVerticesBuffer[i*3*2];
-            float screenY1 = screenVerticesBuffer[i*3*2+1];
-            float screenX2 = screenVerticesBuffer[(i*3+1)*2];
-            float screenY2 = screenVerticesBuffer[(i*3+1)*2+1];
-            float screenX3 = screenVerticesBuffer[(i*3+2)*2];
-            float screenY3 = screenVerticesBuffer[(i*3+2)*2+1];
+            float screenX1 = screenVerticesBuffer[i * 3 * 2];
+            float screenY1 = screenVerticesBuffer[i * 3 * 2 + 1];
+            float screenX2 = screenVerticesBuffer[(i * 3 + 1) * 2];
+            float screenY2 = screenVerticesBuffer[(i * 3 + 1) * 2 + 1];
+            float screenX3 = screenVerticesBuffer[(i * 3 + 2) * 2];
+            float screenY3 = screenVerticesBuffer[(i * 3 + 2) * 2 + 1];
 
-            shapeRenderer.setColor(entity.color);
-            setRenderColor(entity, options, i*3, i*3+1, i*3+2); //pass indices[index] for randomizeTexture
+            setRenderColor(entity, options, i * 3, i * 3 + 1, i * 3 + 2); //pass indices[index] for randomizeTexture
 
             //draws 1 triangle (first triplet of vertices) or 2 if SH-clipping with 2 vertices behind camera (second triplet of vertices)
             drawTriangle(options, screenX1, screenY1, screenX2, screenY2, screenX3, screenY3);
@@ -302,36 +317,6 @@ public class Renderer {
             );
             shapeRenderer.end();
         }
-    }
-
-    private float[][] shNearPlaneClip(float[] clipV1, float[] clipV2, float[] clipV3) {
-        int negWCount = 0;
-
-        if (Matrix.getW(clipV1) <= 0) negWCount++;
-        if (Matrix.getW(clipV2) <= 0) negWCount++;
-        if (Matrix.getW(clipV3) <= 0) negWCount++;
-
-        if (negWCount == 1) {
-            return shCullingOneBehind(clipV1, clipV2, clipV3); //assigns to frontV2, intersectionV1 & intersectionV2 directly
-        }
-
-        if (negWCount == 2) {
-            return shCullingTwoBehind(clipV1, clipV2, clipV3);
-        }
-
-        if (negWCount == 3) {
-            throw new IllegalStateException();
-        }
-
-        return new float[][]{clipV1, clipV2, clipV3, null, null, null};
-    }
-
-    private float[] getClipVertex(int idx, float[] clipVertices) {
-        return new float[]{
-            clipVertices[idx * clipStride],
-            clipVertices[idx * clipStride + 1],
-            clipVertices[idx * clipStride + 2],
-            clipVertices[idx * clipStride + 3]};
     }
 
     /**
@@ -423,8 +408,10 @@ public class Renderer {
      */
     private void directMatmul(float[] storageArray, int startIdx, float[][] matrix, float x, float y, float z, float w) {
 
-        if (matrix.length != 4 || matrix[0].length != 4)
-            throw new IllegalArgumentException("directMatmul only computes @ of 4x4 matrix & vector4");
+        assert matrix.length == 4 && matrix[0].length == 4;
+
+//        if (matrix.length != 4 || matrix[0].length != 4)
+//            throw new IllegalArgumentException("directMatmul only computes @ of 4x4 matrix & vector4");
 
         float resX = 0;
         float resY = 0;
@@ -456,103 +443,6 @@ public class Renderer {
         storageArray[startIdx + 2] = resZ;
         storageArray[startIdx + 3] = resW;
     }
-
-    /**
-     *
-     * @param v1
-     * @param v2
-     * @param v3
-     * @return the vertices of the two clipped triangles
-     */
-    private float[][] shCullingOneBehind(float[] v1, float[] v2, float[] v3) {
-        float[] behindV, frontV1, frontV2;
-
-        if (Matrix.getW(v1) <= 0) {
-            behindV = v1;
-            frontV1 = v2;
-            frontV2 = v3;
-        } else if (Matrix.getW(v2) <= 0) {
-            behindV = v2;
-            frontV1 = v1;
-            frontV2 = v3;
-        } else {
-            behindV = v3;
-            frontV1 = v1;
-            frontV2 = v2;
-        }
-
-        float t1 = Matrix.getW(frontV1) / (Matrix.getW(frontV1) - Matrix.getW(behindV));
-        float t2 = Matrix.getW(frontV2) / (Matrix.getW(frontV2) - Matrix.getW(behindV));
-
-        float intersectionX1 = Matrix.getX(frontV1) + t1 * (Matrix.getX(behindV) - Matrix.getX(frontV1));
-        float intersectionY1 = Matrix.getY(frontV1) + t1 * (Matrix.getY(behindV) - Matrix.getY(frontV1));
-        float intersectionZ1 = Matrix.getZ(frontV1) + t1 * (Matrix.getZ(behindV) - Matrix.getZ(frontV1));
-
-        float intersectionX2 = Matrix.getX(frontV2) + t2 * (Matrix.getX(behindV) - Matrix.getX(frontV2));
-        float intersectionY2 = Matrix.getY(frontV2) + t2 * (Matrix.getY(behindV) - Matrix.getY(frontV2));
-        float intersectionZ2 = Matrix.getZ(frontV2) + t2 * (Matrix.getZ(behindV) - Matrix.getZ(frontV2));
-
-        float[] intersectionV1 = new float[]{intersectionX1, intersectionY1, intersectionZ1, NEAR_PLANE_EPSILON};
-        float[] intersectionV2 = new float[]{intersectionX2, intersectionY2, intersectionZ2, NEAR_PLANE_EPSILON};
-
-        return new float[][]{
-            frontV1, frontV2, intersectionV1,
-            frontV2, intersectionV1, intersectionV2
-        };
-    }
-
-    /**
-     *
-     * @param v1
-     * @param v2
-     * @param v3
-     * @return the vertices of the clipped triangle (unchanged front vertex, intersection V1 & V2) and 3x null (no new triangle)
-     */
-    private static float[][] shCullingTwoBehind(float[] v1, float[] v2, float[] v3) {
-        float[] frontV, behindV1, behindV2;
-
-        if (Matrix.getW(v1) > 0) {
-            frontV = v1;
-            behindV1 = v2;
-            behindV2 = v3;
-        } else if (Matrix.getW(v2) > 0) {
-            frontV = v2;
-            behindV1 = v1;
-            behindV2 = v3;
-        } else {
-            frontV = v3;
-            behindV1 = v1;
-            behindV2 = v2;
-        }
-
-        float t1 = Matrix.getW(frontV) / (Matrix.getW(frontV) - Matrix.getW(behindV1));
-        float t2 = Matrix.getW(frontV) / (Matrix.getW(frontV) - Matrix.getW(behindV2));
-
-        float intersectionX1 = Matrix.getX(frontV) + t1 * (Matrix.getX(behindV1) - Matrix.getX(frontV));
-        float intersectionY1 = Matrix.getY(frontV) + t1 * (Matrix.getY(behindV1) - Matrix.getY(frontV));
-        float intersectionZ1 = Matrix.getZ(frontV) + t1 * (Matrix.getZ(behindV1) - Matrix.getZ(frontV));
-
-        float intersectionX2 = Matrix.getX(frontV) + t2 * (Matrix.getX(behindV2) - Matrix.getX(frontV));
-        float intersectionY2 = Matrix.getY(frontV) + t2 * (Matrix.getY(behindV2) - Matrix.getY(frontV));
-        float intersectionZ2 = Matrix.getZ(frontV) + t2 * (Matrix.getZ(behindV2) - Matrix.getZ(frontV));
-
-        float[] intersectionV1 = new float[]{intersectionX1, intersectionY1, intersectionZ1, NEAR_PLANE_EPSILON};
-        float[] intersectionV2 = new float[]{intersectionX2, intersectionY2, intersectionZ2, NEAR_PLANE_EPSILON};
-
-        return new float[][]{
-            frontV, intersectionV1, intersectionV2,
-            null, null, null
-        };
-    }
-
-    boolean inFrustum(int idx, float[] clipVertices) {
-        float x = clipVertices[idx * clipStride];
-        float y = clipVertices[idx * clipStride + 1];
-        float w = clipVertices[idx * clipStride + 3];
-
-        return Math.abs(x) <= w && Math.abs(y) <= w;
-    }
-
 
     void wireFrameRender(Entity entity, float[][] VP) {
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
@@ -602,19 +492,6 @@ public class Renderer {
 
     boolean inNDC(float[] v) {
         return Matrix.getX(v) >= -1 && Matrix.getX(v) <= 1 && Matrix.getY(v) >= -1 && Matrix.getY(v) <= 1;
-    }
-
-    private float[] clipToScreen(float[] v) {
-        final float w = Matrix.getW(v);
-        final float ndcX = Matrix.getX(v) / w;
-        final float ndcY = Matrix.getY(v) / w;
-//        final float ndcZ = Matrix.getZ(v) / w;
-
-        final float screenX = (ndcX + 1) / 2 * Main.SCREEN_WIDTH;
-        final float screenY = (ndcY + 1) / 2 * Main.SCREEN_HEIGHT;
-
-        return new float[]{screenX, screenY};
-
     }
 
     final float[] clipToNdc(float[] clipSpaceV) {
