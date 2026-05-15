@@ -8,6 +8,7 @@ import com.badlogic.gdx.Input;
 public class Camera implements Movable {
 
 
+    public static final int TUNED_FPS = 144;
     protected final Transform transform;
 
     private final int fovDeg;
@@ -33,8 +34,8 @@ public class Camera implements Movable {
     }
 
     boolean update(float dt) {
-        double theta = Math.PI / 256 * dt * 144;
-        float mag = .02f * dt * 144;
+        double theta = Math.PI / 256 * dt * TUNED_FPS;
+        float mag = .02f * dt * TUNED_FPS;
 
         float dx = 0, dy = 0, dz = 0;
         float rotX = 0, rotY = 0;
@@ -71,7 +72,7 @@ public class Camera implements Movable {
         transform.rotation = qYaw.mul(qPitch);  // yaw first, then pitch
 
 
-        return (rotX != 0 || rotY != 0 || dx != 0 || dy != 0 || dz != 0 || Gdx.input.isKeyPressed(Input.Keys.R));
+        return (rotX != 0 || rotY != 0 || dx != 0 || dy != 0 || dz != 0 || Gdx.input.isKeyJustPressed(Input.Keys.R));
     }
 
     public void rotateLocal(double theta, float ax, float ay, float az) {
