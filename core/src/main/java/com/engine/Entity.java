@@ -15,7 +15,7 @@ public class Entity implements Movable {
 
     List<Behavior> behaviors = new ArrayList<>();
 
-    String name;
+//    String name;
 
     public Entity(Transform transform, Mesh mesh, Color color) {
         this.transform = transform;

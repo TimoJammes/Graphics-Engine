@@ -37,23 +37,6 @@ public abstract class Scene {
     void addEntity(Entity e) {
         entities.add(e);
     }
-
-//    Entity addEntityFromObj(String path) {
-//        ObjLoader.Result res;
-//        try {
-//            res = ObjLoader.load(path);
-//        } catch (IOException e) {
-//            throw new RuntimeException(e);
-//        }
-//
-//        Mesh mesh1 = new Mesh(res.vertices, res.indices);
-//
-//        Entity entity = new Entity(mesh1, res.color);
-//        addEntity(entity);
-//
-//        return entity;
-//    }
-
 }
 
 class TeapotScene extends Scene {

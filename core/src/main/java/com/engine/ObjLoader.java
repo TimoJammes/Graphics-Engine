@@ -7,7 +7,7 @@ import java.io.*;
 import java.util.*;
 
 /**
- * CLaude-Generated.
+ * Claude-Generated.
  * Parses a .obj file into flat float arrays ready for a Mesh.
  * Also parses the associated .mtl file for material colors.
  * Usage:

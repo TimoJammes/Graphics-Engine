@@ -11,7 +11,7 @@ public class Camera implements Movable {
     public static final int TUNED_FPS = 144;
     protected final Transform transform;
 
-    private final int fovDeg;
+//    private final int fovDeg;
     private final double fovRad;
     private final float nearPlane;
     private final float farPlane;
@@ -22,7 +22,7 @@ public class Camera implements Movable {
 
     Camera(int fovDeg, float near, float far, float aspect, Transform transform) {
         this.transform = transform;
-        this.fovDeg = fovDeg;
+//        this.fovDeg = fovDeg;
         fovRad = Math.toRadians(fovDeg);
         this.nearPlane = near;
         this.farPlane = far;
@@ -52,13 +52,10 @@ public class Camera implements Movable {
         if (Gdx.input.isKeyPressed(Input.Keys.A)) rotY += (float) theta;
         if (Gdx.input.isKeyPressed(Input.Keys.D)) rotY -= (float) theta;
 
-        if (Gdx.input.isKeyPressed(Input.Keys.R)) resetTransform();
+        if (Gdx.input.isKeyJustPressed(Input.Keys.R)) resetTransform();
 
         translateLocal(dx, 0, dz);
         translateWorld(0, dy, 0);
-
-//        if (rotX != 0) rotateLocal(rotX, 1, 0, 0);
-//        if (rotY != 0) rotateLocal(rotY, 0, 1, 0);
 
         pitch += rotX;
         yaw += rotY;
@@ -110,9 +107,7 @@ public class Camera implements Movable {
         final float[][] res = new float[4][4];
 
         for (int i = 0; i < 3; i++) {
-            for (int j = 0; j < 3; j++) {
-                res[i][j] = rotationMatrixT[i][j];
-            }
+            System.arraycopy(rotationMatrixT[i], 0, res[i], 0, 3);
         }
 
         res[0][3] = minusRTDotPos[0];

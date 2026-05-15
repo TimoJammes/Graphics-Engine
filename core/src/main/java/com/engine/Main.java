@@ -4,17 +4,17 @@ import com.badlogic.gdx.ApplicationAdapter;
 import com.badlogic.gdx.Gdx;
 //import com.badlogic.gdx.Input;
 //import com.badlogic.gdx.assets.loaders.BitmapFontLoader;
-import com.badlogic.gdx.graphics.Color;
+//import com.badlogic.gdx.graphics.Color;
 
 //import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 
-import com.badlogic.gdx.graphics.GL20;
+//import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
-import com.badlogic.gdx.utils.ScreenUtils;
+//import com.badlogic.gdx.utils.ScreenUtils;
 
-import java.io.IOException;
+//import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.Queue;
 //import java.util.Arrays;
@@ -32,7 +32,7 @@ public class Main extends ApplicationAdapter implements EngineListener {
     private BitmapFont font;
     private SpriteBatch batch;
 
-    private Queue<Event> eventQueue = new ArrayDeque<>();
+    private final Queue<Event> eventQueue = new ArrayDeque<>();
 
     private Engine engine;
 
@@ -70,7 +70,7 @@ public class Main extends ApplicationAdapter implements EngineListener {
         }
 
         if (needsRedraw) {
-            draw(dt);
+            draw();
             redrawCount++;
             if (redrawCount == 2) {
                 redrawCount = 0;
@@ -79,9 +79,9 @@ public class Main extends ApplicationAdapter implements EngineListener {
         }
     }
 
-    void update(float dt) {}
+//    void update(float dt) {}
 
-    void draw(float dt) {
+    void draw() {
 //        ScreenUtils.clear(Color.BLACK);
         engine.renderScene();
         batch.begin();
