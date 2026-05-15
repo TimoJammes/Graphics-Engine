@@ -7,6 +7,7 @@ import java.io.*;
 import java.util.*;
 
 /**
+ * CLaude-Generated.
  * Parses a .obj file into flat float arrays ready for a Mesh.
  * Also parses the associated .mtl file for material colors.
  * Usage:
@@ -22,7 +23,7 @@ public class ObjLoader {
 
     private static final Color DEFAULT_COLOR = Color.BLUE;
 
-    public static class Result {
+    static class Result {
         public float[] vertices;
         public float[] normals;
         public float[] uvs;
@@ -148,8 +149,6 @@ public class ObjLoader {
         result.indices  = toIntArray(indices);
 
         // --- Parse .mtl if referenced ---
-//        System.out.println("mtllib: " + mtlFile);
-//        System.out.println("mtlPath: " + parentDir(path) + mtlFile);
 
         if (mtlFile != null) {
             String mtlPath = parentDir(path) + mtlFile;
