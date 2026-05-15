@@ -85,14 +85,11 @@ class AnimalScene extends Scene {
         backgroundColor = Color.BLUE;
 
         Entity beaver1 = new Entity("OBJ-animals/animal-beaver.obj");
-        Entity beaver2 = new Entity("OBJ-animals/animal-beaver.obj");
-        Entity beaver3 = new Entity("OBJ-animals/animal-beaver.obj");
-        Entity beaver4 = new Entity("OBJ-animals/animal-beaver.obj");
-
         beaver1.color = Color.BROWN;
-        beaver2.color = Color.BROWN;
-        beaver3.color = Color.BROWN;
-        beaver4.color = Color.BROWN;
+        Entity beaver2 = new Entity(beaver1.mesh, Color.BROWN);
+        Entity beaver3 = new Entity(beaver1.mesh, Color.BROWN);
+        Entity beaver4 = new Entity(beaver1.mesh, Color.BROWN);
+
 
         beaver1.setPos(0, 0, -2);
         beaver2.setPos(0, 1, 2);
@@ -148,7 +145,7 @@ class BenchMarkScene extends Scene {
     BenchMarkScene() {
         backgroundColor = Color.BLUE;
 
-        int numX = 1;
+        int numX = 2;
         int numY = numX;
 
         for(int x = -numX/2; x < Math.max(1, numX/2); x++) {
