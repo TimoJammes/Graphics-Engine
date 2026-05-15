@@ -14,15 +14,18 @@ public class Renderer {
     private static final float NEAR_PLANE_EPSILON = 0.01f;
 
     private static final int MAX_VERTICES = 1_000_000;
+    private static final int MAX_TRIANGLES = MAX_VERTICES * 2;
     private static final int clipStride = 4; //stride of 4 to store w (4th coord) of vertices (clip w = -view z)
 
     private static final int vertexStride = 3;
 
     //solidRender pre-alloc
-    private final float[] clipVertices = new float[MAX_VERTICES * clipStride];
+    private final float[] vertexBuffer = new float[MAX_VERTICES * clipStride];
     private final int[] triangleOrder = new int[MAX_VERTICES * 2];
-    float[] avgZValues = new float[triangleOrder.length];
+    float[] avgZBuffer = new float[triangleOrder.length];
     Integer[] positions = new Integer[triangleOrder.length];
+    private final int[] postClipIndices = new int[MAX_TRIANGLES * 2 * 3]; // * 2 for clipping, * 3 for 3 vertex indices
+    private final float[] screenVerticesBuffer = new float[MAX_TRIANGLES * 2 * 2 * 3]; //*2 for possible extra triangle from SH clipping, *2 for x and y, *3 for 3 vertices per triangle
 
     Renderer(ShapeRenderer shapeRenderer) {
         this.shapeRenderer = shapeRenderer;
@@ -62,98 +65,223 @@ public class Renderer {
         final float[] vertices = entity.mesh.vertices;
         final int[] indices = entity.mesh.indices;
 
-        computeClipVertices(vertices, MVP); //stores to clipVertices array
 
-        int triangleCount = cullOuterTriangles(indices);
+        computeClipVertices(vertices, MVP, vertexBuffer);
 
-        computeAvgClipZ(triangleCount, indices); //stores to avgZValues
+        int triangleCount = cullOuterTriangles(indices, vertexBuffer, triangleOrder);
 
-        for (int i = 0; i < triangleCount; i++) positions[i] = i; //to sort triangles by avgZValues
+        computeAvgClipZ(triangleCount, triangleOrder, indices, vertexBuffer, avgZBuffer);
 
-        Arrays.sort(positions, 0, triangleCount, (a, b) -> Float.compare(avgZValues[a], avgZValues[b]));
+        for (int i = 0; i < triangleCount; i++) positions[i] = i; //to sort triangles by avg z values
+
+        Arrays.sort(positions, 0, triangleCount, (a, b) -> Float.compare(avgZBuffer[a], avgZBuffer[b]));
+
+        int totalVertices = vertices.length / vertexStride;
+
+        int postClipTriangleCount = 0;
+        for (int i = 0; i < triangleCount; i++) {
+            int idx = triangleOrder[positions[i]];
+
+            int idx1 = indices[idx];
+            int idx2 = indices[idx + 1];
+            int idx3 = indices[idx + 2];
+
+            float w1 = vertexBuffer[idx1 * clipStride + 3];
+            float w2 = vertexBuffer[idx2 * clipStride + 3];
+            float w3 = vertexBuffer[idx3 * clipStride + 3];
+
+            int behind = 0;
+            if (w1 <= 0)
+                behind++;
+            if (w2 <= 0)
+                behind++;
+            if (w3 <= 0)
+                behind++;
+
+            //fully visible
+            if (behind == 0) {
+                postClipIndices[postClipTriangleCount * 3] = idx1;
+                postClipIndices[postClipTriangleCount * 3 + 1] = idx2;
+                postClipIndices[postClipTriangleCount * 3 + 2] = idx3;
+                postClipTriangleCount++;
+            } else if (behind == 1) {
+
+                int behindIdx, frontIdx1, frontIdx2;
+
+                if (w1 <= 0) {
+                    behindIdx = idx1;
+                    frontIdx1 = idx2;
+                    frontIdx2 = idx3;
+                } else if (w2 <= 0) {
+                    behindIdx = idx2;
+                    frontIdx1 = idx1;
+                    frontIdx2 = idx3;
+                } else {
+                    behindIdx = idx3;
+                    frontIdx1 = idx1;
+                    frontIdx2 = idx2;
+                }
+
+                int f1 = frontIdx1 * clipStride;
+                int f2 = frontIdx2 * clipStride;
+                int bh = behindIdx * clipStride;
+
+                float t1 = vertexBuffer[f1 + 3] / (vertexBuffer[f1 + 3] - vertexBuffer[bh + 3]);
+                float t2 = vertexBuffer[f2 + 3] / (vertexBuffer[f2 + 3] - vertexBuffer[bh + 3]);
+
+                float intersectionX1 = vertexBuffer[f1] + t1 * (vertexBuffer[bh] - vertexBuffer[f1]);
+                float intersectionY1 = vertexBuffer[f1 + 1] + t1 * (vertexBuffer[bh + 1] - vertexBuffer[f1 + 1]);
+                float intersectionZ1 = vertexBuffer[f1 + 2] + t1 * (vertexBuffer[bh + 2] - vertexBuffer[f1 + 2]);
+
+                float intersectionX2 = vertexBuffer[f2] + t2 * (vertexBuffer[bh] - vertexBuffer[f2]);
+                float intersectionY2 = vertexBuffer[f2 + 1] + t2 * (vertexBuffer[bh + 1] - vertexBuffer[f2 + 1]);
+                float intersectionZ2 = vertexBuffer[f2 + 2] + t2 * (vertexBuffer[bh + 2] - vertexBuffer[f2 + 2]);
+
+                vertexBuffer[totalVertices * clipStride] = intersectionX1;
+                vertexBuffer[totalVertices * clipStride + 1] = intersectionY1;
+                vertexBuffer[totalVertices * clipStride + 2] = intersectionZ1;
+                vertexBuffer[totalVertices * clipStride + 3] = NEAR_PLANE_EPSILON;
+                postClipIndices[postClipTriangleCount * 3] = frontIdx1;
+                postClipIndices[postClipTriangleCount * 3 + 1] = frontIdx2;
+                postClipIndices[postClipTriangleCount * 3 + 2] = totalVertices;
+                totalVertices++;
+                postClipTriangleCount++;
+
+                vertexBuffer[totalVertices * clipStride] = intersectionX2;
+                vertexBuffer[totalVertices * clipStride + 1] = intersectionY2;
+                vertexBuffer[totalVertices * clipStride + 2] = intersectionZ2;
+                vertexBuffer[totalVertices * clipStride + 3] = NEAR_PLANE_EPSILON;
+
+                postClipIndices[postClipTriangleCount * 3] = frontIdx2;
+                postClipIndices[postClipTriangleCount * 3 + 1] = totalVertices - 1;
+                postClipIndices[postClipTriangleCount * 3 + 2] = totalVertices;
+                totalVertices++;
+                postClipTriangleCount++;
+
+            } else if (behind == 2) {
+
+                int frontIdx, behindIdx1, behindIdx2;
+
+                if (w1 > 0) {
+                    frontIdx = idx1;
+                    behindIdx1 = idx2;
+                    behindIdx2 = idx3;
+                } else if (w2 > 0) {
+                    frontIdx = idx2;
+                    behindIdx1 = idx1;
+                    behindIdx2 = idx3;
+                } else {
+                    frontIdx = idx3;
+                    behindIdx1 = idx1;
+                    behindIdx2 = idx2;
+                }
+
+                int f = frontIdx * clipStride;
+                int b1 = behindIdx1 * clipStride;
+                int b2 = behindIdx2 * clipStride;
+
+                float t1 = vertexBuffer[f + 3] / (vertexBuffer[f + 3] - vertexBuffer[b1 + 3]);
+                float t2 = vertexBuffer[f + 3] / (vertexBuffer[f + 3] - vertexBuffer[b2 + 3]);
+
+                float intersectionX1 = vertexBuffer[f] + t1 * (vertexBuffer[b1] - vertexBuffer[f]);
+                float intersectionY1 = vertexBuffer[f + 1] + t1 * (vertexBuffer[b1 + 1] - vertexBuffer[f + 1]);
+                float intersectionZ1 = vertexBuffer[f + 2] + t1 * (vertexBuffer[b1 + 2] - vertexBuffer[f + 2]);
+
+                float intersectionX2 = vertexBuffer[f] + t2 * (vertexBuffer[b2] - vertexBuffer[f]);
+                float intersectionY2 = vertexBuffer[f + 1] + t2 * (vertexBuffer[b2 + 1] - vertexBuffer[f + 1]);
+                float intersectionZ2 = vertexBuffer[f + 2] + t2 * (vertexBuffer[b2 + 2] - vertexBuffer[f + 2]);
 
 
+                postClipIndices[postClipTriangleCount * 3] = frontIdx;
+                vertexBuffer[totalVertices * clipStride] = intersectionX1;
+                vertexBuffer[totalVertices * clipStride + 1] = intersectionY1;
+                vertexBuffer[totalVertices * clipStride + 2] = intersectionZ1;
+                vertexBuffer[totalVertices * clipStride + 3] = NEAR_PLANE_EPSILON;
+                postClipIndices[postClipTriangleCount * 3 + 1] = totalVertices;
+                totalVertices++;
+                vertexBuffer[totalVertices * clipStride] = intersectionX2;
+                vertexBuffer[totalVertices * clipStride + 1] = intersectionY2;
+                vertexBuffer[totalVertices * clipStride + 2] = intersectionZ2;
+                vertexBuffer[totalVertices * clipStride + 3] = NEAR_PLANE_EPSILON;
+                postClipIndices[postClipTriangleCount * 3 + 2] = totalVertices;
+                totalVertices++;
+                postClipTriangleCount++;
+            }
+        }
+
+
+        for (int i = 0; i < postClipTriangleCount; i++) {
+
+            for(int j=0; j < 3; j++) {
+                int idx = postClipIndices[i * 3 + j];
+
+                final float w = vertexBuffer[idx * clipStride + 3];
+                final float ndcX = vertexBuffer[idx * clipStride] / w;
+                final float ndcY = vertexBuffer[idx * clipStride + 1] / w;
+
+                final float screenX = (ndcX + 1) / 2 * Main.SCREEN_WIDTH;
+                final float screenY = (ndcY + 1) / 2 * Main.SCREEN_HEIGHT;
+
+                screenVerticesBuffer[(i*3+j)*2] = screenX;
+                screenVerticesBuffer[(i*3+j)*2+1] = screenY;
+            }
+        }
         if (!options.showWireFrame)
             shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
 
-        for (int i = 0; i < triangleCount; i++) {
-            int index = triangleOrder[positions[i]];
 
+        for (int i = 0; i < postClipTriangleCount; i++) {
 
-            float[] clipV1 = getClipVertex(indices[index]);
-            float[] clipV2 = getClipVertex(indices[index + 1]);
-            float[] clipV3 = getClipVertex(indices[index + 2]);
+            float screenX1 = screenVerticesBuffer[i*3*2];
+            float screenY1 = screenVerticesBuffer[i*3*2+1];
+            float screenX2 = screenVerticesBuffer[(i*3+1)*2];
+            float screenY2 = screenVerticesBuffer[(i*3+1)*2+1];
+            float screenX3 = screenVerticesBuffer[(i*3+2)*2];
+            float screenY3 = screenVerticesBuffer[(i*3+2)*2+1];
 
-
-            //if 1 vertex behind camera, new triangle created with vertices screenFrontV2, screenIntersection1, screenIntersection2
-            //if 2 vertices behind camera, these are modified in place to become intersection vertices
-            float[][] shClipVertices = shNearPlaneClip(clipV1, clipV2, clipV3);
-
-            float[] shClipT1V1 = shClipVertices[0];
-            float[] shClipT1V2 = shClipVertices[1];
-            float[] shClipT1V3 = shClipVertices[2];
-
-            float[] shClipT2V1 = shClipVertices[3];
-            float[] shClipT2V2 = shClipVertices[4];
-            float[] shClipT2V3 = shClipVertices[5];
-
-            float[] screenT1V1 = clipToScreen(shClipT1V1);
-            float[] screenT1V2 = clipToScreen(shClipT1V2);
-            float[] screenT1V3 = clipToScreen(shClipT1V3);
-
-            float[] screenT2V1 = shClipT2V1 == null ? null : clipToScreen(shClipT2V1);
-            float[] screenT2V2 = shClipT2V1 == null ? null : clipToScreen(shClipT2V2);
-            float[] screenT2V3 = shClipT2V1 == null ? null : clipToScreen(shClipT2V3);
-
-            setRenderColor(entity, options, indices[index]); //pass indices[index] for randomizeTexture
+            shapeRenderer.setColor(entity.color);
+            setRenderColor(entity, options, i*3, i*3+1, i*3+2); //pass indices[index] for randomizeTexture
 
             //draws 1 triangle (first triplet of vertices) or 2 if SH-clipping with 2 vertices behind camera (second triplet of vertices)
-            drawTriangles(options, screenT1V1, screenT1V2, screenT1V3, screenT2V1, screenT2V2, screenT2V3);
+            drawTriangle(options, screenX1, screenY1, screenX2, screenY2, screenX3, screenY3);
         }
 
         if (!options.showWireFrame)
             shapeRenderer.end();
     }
 
-    private void setRenderColor(Entity entity, RenderOptions options, int idx) {
-        Color color = entity.color;
-        if (options.randomizeTexture) {
-            float[] offsets = {0f, 0.03f, -0.03f, 0.06f, -0.06f};
-            float offset = offsets[idx % offsets.length];
-
-            color = new Color(
-                Math.clamp(entity.color.r + offset, 0, 1),
-                Math.clamp(entity.color.g + offset, 0, 1),
-                Math.clamp(entity.color.b + offset, 0, 1),
-                1f
-            );
+    private void setRenderColor(Entity entity, RenderOptions options, int idx1, int idx2, int idx3) {
+        if (!options.randomizeTexture) {
+            shapeRenderer.setColor(entity.color);
+            return;
         }
 
-        shapeRenderer.setColor(color);
+        // deterministic pseudo-random hash from all 3 vertex indices
+        int hash = (idx1 * 92837111) ^ (idx2 * 689287499) ^ (idx3 * 283823481);
+        float offset = ((hash & 0xFF) / 255f - 0.5f) * 0.12f; // range [-0.06, 0.06]
+
+        shapeRenderer.setColor(
+            Math.clamp(entity.color.r + offset, 0, 1),
+            Math.clamp(entity.color.g + offset, 0, 1),
+            Math.clamp(entity.color.b + offset, 0, 1),
+            1f
+        );
     }
 
     /**
      * draws triangle connecting v1, v2, v3 by default.
      * if 2 vertices were behind camera, 2 triangles drawn through Sutherland-Hodgman clipping wrt near-plane.
      */
-    private void drawTriangles(RenderOptions options, float[] v1, float[] v2, float[] v3, float[] frontV2, float[] intersecV1, float[] intersecV2) {
+    private void drawTriangle(RenderOptions options, float v1X, float v1Y, float v2X, float v2Y, float v3X, float v3Y) {
 
         if (options.showWireFrame)
             shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
 
         shapeRenderer.triangle(
-            Matrix.getX(v1), Matrix.getY(v1),
-            Matrix.getX(v2), Matrix.getY(v2),
-            Matrix.getX(v3), Matrix.getY(v3)
+            v1X, v1Y,
+            v2X, v2Y,
+            v3X, v3Y
         );
-
-        if (frontV2 != null) //same as checking if intersectionV2 isnt null
-            shapeRenderer.triangle(
-                Matrix.getX(frontV2), Matrix.getY(frontV2),
-                Matrix.getX(intersecV1), Matrix.getY(intersecV1),
-                Matrix.getX(intersecV2), Matrix.getY(intersecV2)
-            );
-
 
         if (options.showWireFrame) {
             shapeRenderer.end();
@@ -161,31 +289,17 @@ public class Renderer {
             shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
             shapeRenderer.setColor(Color.BLACK);
             shapeRenderer.line(
-                Matrix.getX(v1), Matrix.getY(v1),
-                Matrix.getX(v2), Matrix.getY(v2)
+                v1X, v1Y,
+                v2X, v2Y
             );
             shapeRenderer.line(
-                Matrix.getX(v1), Matrix.getY(v1),
-                Matrix.getX(v3), Matrix.getY(v3)
+                v1X, v1Y,
+                v3X, v3Y
             );
             shapeRenderer.line(
-                Matrix.getX(v2), Matrix.getY(v2),
-                Matrix.getX(v3), Matrix.getY(v3)
+                v2X, v2Y,
+                v3X, v3Y
             );
-            if (frontV2 != null) {
-                shapeRenderer.line(
-                    Matrix.getX(frontV2), Matrix.getY(frontV2),
-                    Matrix.getX(intersecV1), Matrix.getY(intersecV1)
-                );
-                shapeRenderer.line(
-                    Matrix.getX(frontV2), Matrix.getY(frontV2),
-                    Matrix.getX(intersecV2), Matrix.getY(intersecV2)
-                );
-                shapeRenderer.line(
-                    Matrix.getX(intersecV1), Matrix.getY(intersecV1),
-                    Matrix.getX(intersecV2), Matrix.getY(intersecV2)
-                );
-            }
             shapeRenderer.end();
         }
     }
@@ -205,14 +319,14 @@ public class Renderer {
             return shCullingTwoBehind(clipV1, clipV2, clipV3);
         }
 
-        if(negWCount == 3) {
+        if (negWCount == 3) {
             throw new IllegalStateException();
         }
 
         return new float[][]{clipV1, clipV2, clipV3, null, null, null};
     }
 
-    private float[] getClipVertex(int idx) {
+    private float[] getClipVertex(int idx, float[] clipVertices) {
         return new float[]{
             clipVertices[idx * clipStride],
             clipVertices[idx * clipStride + 1],
@@ -220,43 +334,71 @@ public class Renderer {
             clipVertices[idx * clipStride + 3]};
     }
 
-    private void computeAvgClipZ(int triangleCount, int[] indices) {
+    /**
+     * computes average z value for triangles
+     *
+     * @param triangleCount number of triangles (indices in triangleOrder)
+     * @param triangleOrder contains index of first triangle vertex index in indices
+     * @param indices       contains indices (idx1, idx2, idx3) of vertices of each triangle
+     * @param clipVertices  contains clip-space vertex coordinates
+     * @param out           array to store avg z values in
+     */
+    private void computeAvgClipZ(int triangleCount, int[] triangleOrder, int[] indices, float[] clipVertices, float[] out) {
         for (int i = 0; i < triangleCount; i++) {
-            avgZValues[i] = avgZ(triangleOrder[i], indices);
+            out[i] = avgZ(triangleOrder[i], indices, clipVertices);
         }
     }
 
     /**
-     * culls triangles (from vertices in clipVertices) behind camera or out of frustum &
+     * culls triangles (from vertices in clipVertices) behind camera or completely out of frustum &
      * stores triangle indices (first idx of triangle vertex index in indices) in triangleOrder
+     *
      * @param indices
+     * @param clipVertices
+     * @param out          array to store triangle indices to (index in indices of first index of vertex of each triangle)
      * @return number of triangles after cull (# indices stored in triangleOrder)
      */
-    private int cullOuterTriangles(int[] indices) {
+    private int cullOuterTriangles(int[] indices, float[] clipVertices, int[] out) {
         int triangleCount = 0;
         for (int i = 0; i < indices.length; i += 3) {
             int idx1 = indices[i];
             int idx2 = indices[i + 1];
             int idx3 = indices[i + 2];
 
-            float w1 = clipVertices[idx1 * 4 + 3];
-            float w2 = clipVertices[idx2 * 4 + 3];
-            float w3 = clipVertices[idx3 * 4 + 3];
+            float x1 = clipVertices[idx1 * clipStride], y1 = clipVertices[idx1 * clipStride + 1];
+            float x2 = clipVertices[idx2 * clipStride], y2 = clipVertices[idx2 * clipStride + 1];
+            float x3 = clipVertices[idx3 * clipStride], y3 = clipVertices[idx3 * clipStride + 1];
+            float w1 = clipVertices[idx1 * clipStride + 3], w2 = clipVertices[idx2 * clipStride + 3], w3 = clipVertices[idx3 * clipStride + 3];
 
-            // behind camera check
-            if (w1 <= 0 && w2 <= 0 && w3 <= 0) continue;
-//            if (w1 <= 0 || w2 <= 0 || w3 <= 0) continue;
 
-            // basic NDC bounds check
-            if (w1 > 0 && w2 > 0 && w3 > 0 && !inFrustum(idx1) && !inFrustum(idx2) && !inFrustum(idx3)) continue;
-//            if (!inFrustum(idx1) || !inFrustum(idx2) || !inFrustum(idx3)) continue;
+//            if (w1 <= 0 && w2 <= 0 && w3 <= 0) continue;
+////            if (w1 <= 0 || w2 <= 0 || w3 <= 0) continue;
+//
+//            // basic NDC bounds check
+//            if (w1 > 0 && w2 > 0 && w3 > 0 && !inFrustum(idx1, clipVertices) && !inFrustum(idx2, clipVertices) && !inFrustum(idx3, clipVertices)) continue;
 
-            triangleOrder[triangleCount++] = i;  // only add visible triangles
+            boolean cull =
+                (w1 <= 0 && w2 <= 0 && w3 <= 0) ||  // all behind near plane
+                    (x1 > w1 && x2 > w2 && x3 > w3) ||  // all right of right plane
+                    (x1 < -w1 && x2 < -w2 && x3 < -w3) ||  // all left of left plane
+                    (y1 > w1 && y2 > w2 && y3 > w3) ||  // all above top plane
+                    (y1 < -w1 && y2 < -w2 && y3 < -w3);    // all below bottom plane
+
+            if (cull) continue;
+
+            out[triangleCount++] = i;  // only add visible triangles
         }
         return triangleCount;
     }
 
-    private void computeClipVertices(float[] vertices, float[][] MVP) {
+    /**
+     * compute clip-space vertex coords.
+     *
+     * @param vertices: entity model-space coords (x, y, z)
+     * @param MVP:      model-view-projection matrix
+     * @param out:      store computed vertices here (x, y, z, w)
+     */
+    private void computeClipVertices(float[] vertices, float[][] MVP, float[] out) {
         for (int i = 0; i < vertices.length / vertexStride; i++) {
 
             float x = vertices[i * vertexStride];
@@ -264,19 +406,20 @@ public class Renderer {
             float z = vertices[i * vertexStride + 2];
 
             //to avoid float[] creation through Matrix.matmul
-            directMatmul(clipVertices, i * clipStride, MVP, x, y, z, 1);
+            directMatmul(out, i * clipStride, MVP, x, y, z, 1);
         }
     }
 
     /**
      * Computes matrix @ [x, y, z, w] and stores the resulting vector in storageArray, starting at startIdx
+     *
      * @param storageArray array to store matmul result in
-     * @param startIdx index to start storing matmul result at
-     * @param matrix LHS operator of matmul (4x4 matrix)
-     * @param x 1st coord of RHS operator (vector) of matmul
-     * @param y 2nd coord of RHS operator (vector) of matmul
-     * @param z 3rd coord of RHS operator (vector) of matmul
-     * @param w 4th coord of RHS operator (vector) of matmul
+     * @param startIdx     index to start storing matmul result at
+     * @param matrix       LHS operator of matmul (4x4 matrix)
+     * @param x            1st coord of RHS operator (vector) of matmul
+     * @param y            2nd coord of RHS operator (vector) of matmul
+     * @param z            3rd coord of RHS operator (vector) of matmul
+     * @param w            4th coord of RHS operator (vector) of matmul
      */
     private void directMatmul(float[] storageArray, int startIdx, float[][] matrix, float x, float y, float z, float w) {
 
@@ -313,6 +456,7 @@ public class Renderer {
         storageArray[startIdx + 2] = resZ;
         storageArray[startIdx + 3] = resW;
     }
+
     /**
      *
      * @param v1
@@ -401,7 +545,7 @@ public class Renderer {
         };
     }
 
-    boolean inFrustum(int idx) {
+    boolean inFrustum(int idx, float[] clipVertices) {
         float x = clipVertices[idx * clipStride];
         float y = clipVertices[idx * clipStride + 1];
         float w = clipVertices[idx * clipStride + 3];
@@ -472,6 +616,7 @@ public class Renderer {
         return new float[]{screenX, screenY};
 
     }
+
     final float[] clipToNdc(float[] clipSpaceV) {
         final float w = Matrix.getW(clipSpaceV);
         final float ndcX = Matrix.getX(clipSpaceV) / w;
@@ -488,7 +633,7 @@ public class Renderer {
         return new float[]{screenX, screenY};
     }
 
-    final float avgZ(int index, int[] indices) {
+    final float avgZ(int index, int[] indices, float[] clipVertices) {
         float z1, z2, z3;
 
         z1 = -clipVertices[indices[index] * clipStride + 3];
