@@ -37,9 +37,10 @@ public class Quaternion{
 
     void rotateLocal(double theta, float ax, float ay, float az) {
         double l = Math.sqrt(ax*ax + ay*ay + az*az);
-        ax /= (float) l;
-        ay /= (float) l;
-        az /= (float) l;
+
+        ax = (float)(ax / l);
+        ay = (float)(ay / l);
+        az = (float)(az / l);
 
         float sinHalfTheta = (float) Math.sin(theta/2);
 
