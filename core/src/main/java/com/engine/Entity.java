@@ -21,12 +21,12 @@ public class Entity implements Movable {
         this.transform = transform;
         this.mesh = mesh;
         this.color = color;
+
+        System.out.println(mesh.vertices.length / 3);
     }
 
     public Entity(Mesh mesh, Color color) {
-        this.transform = new Transform();
-        this.mesh = mesh;
-        this.color = color;
+        this(new Transform(), mesh, color);
     }
 
     public Entity(String objFilePath) {
