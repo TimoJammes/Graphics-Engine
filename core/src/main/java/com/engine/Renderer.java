@@ -24,9 +24,6 @@ public class Renderer {
     float[] avgZValues = new float[triangleOrder.length];
     Integer[] positions = new Integer[triangleOrder.length];
 
-    float[] frontV2 = null, intersectionV1 = null, intersectionV2 = null; //for SH-clipping with 1 negative-w vertex
-    float[] screenFrontV2 = null, screenIntersection1 = null, screenIntersection2 = null;
-
     Renderer(ShapeRenderer shapeRenderer) {
         this.shapeRenderer = shapeRenderer;
     }
@@ -45,11 +42,9 @@ public class Renderer {
 
             switch (options.renderMode) {
                 case Scene.RenderMode.WIRE_FRAME:
-//                     wireFrameRender(scene, camera);
                     wireFrameRender(entity, VP);
                     break;
                 case Scene.RenderMode.SOLID:
-//                     solidRender(scene, camera);
                     solidRender(entity, VP, options);
                     break;
                 default:
@@ -69,7 +64,6 @@ public class Renderer {
 
         computeClipVertices(vertices, MVP); //stores to clipVertices array
 
-        //culls triangles behind camera or out of frustum & stores triangle indices (first idx of triangle vertex index in indices) in triangleOrder
         int triangleCount = cullOuterTriangles(indices);
 
         computeAvgClipZ(triangleCount, indices); //stores to avgZValues
@@ -87,24 +81,34 @@ public class Renderer {
 
 
             float[] clipV1 = getClipVertex(indices[index]);
-            float[] clipV2 = getClipVertex(indices[index+1]);
-            float[] clipV3 = getClipVertex(indices[index+2]);
+            float[] clipV2 = getClipVertex(indices[index + 1]);
+            float[] clipV3 = getClipVertex(indices[index + 2]);
 
 
             //if 1 vertex behind camera, new triangle created with vertices screenFrontV2, screenIntersection1, screenIntersection2
             //if 2 vertices behind camera, these are modified in place to become intersection vertices
-            screenFrontV2 = null; screenIntersection1 = null; screenIntersection2 = null;
-            shNearPlaneClip(clipV1, clipV2, clipV3);
+            float[][] shClipVertices = shNearPlaneClip(clipV1, clipV2, clipV3);
 
+            float[] shClipT1V1 = shClipVertices[0];
+            float[] shClipT1V2 = shClipVertices[1];
+            float[] shClipT1V3 = shClipVertices[2];
 
-            float[] screenV1 = ndcToScreen(clipToNdc(clipV1));
-            float[] screenV2 = ndcToScreen(clipToNdc(clipV2));
-            float[] screenV3 = ndcToScreen(clipToNdc(clipV3));
+            float[] shClipT2V1 = shClipVertices[3];
+            float[] shClipT2V2 = shClipVertices[4];
+            float[] shClipT2V3 = shClipVertices[5];
+
+            float[] screenT1V1 = clipToScreen(shClipT1V1);
+            float[] screenT1V2 = clipToScreen(shClipT1V2);
+            float[] screenT1V3 = clipToScreen(shClipT1V3);
+
+            float[] screenT2V1 = shClipT2V1 == null ? null : clipToScreen(shClipT2V1);
+            float[] screenT2V2 = shClipT2V1 == null ? null : clipToScreen(shClipT2V2);
+            float[] screenT2V3 = shClipT2V1 == null ? null : clipToScreen(shClipT2V3);
 
             setRenderColor(entity, options, indices[index]); //pass indices[index] for randomizeTexture
 
             //draws 1 triangle (first triplet of vertices) or 2 if SH-clipping with 2 vertices behind camera (second triplet of vertices)
-            drawTriangles(options, screenV1, screenV2, screenV3, screenFrontV2, screenIntersection1, screenIntersection2);
+            drawTriangles(options, screenT1V1, screenT1V2, screenT1V3, screenT2V1, screenT2V2, screenT2V3);
         }
 
         if (!options.showWireFrame)
@@ -185,29 +189,29 @@ public class Renderer {
             shapeRenderer.end();
         }
     }
-    private void shNearPlaneClip(float[] clipV1, float[] clipV2, float[] clipV3) {
-        frontV2 = null; intersectionV1 = null; intersectionV2 = null;
+
+    private float[][] shNearPlaneClip(float[] clipV1, float[] clipV2, float[] clipV3) {
         int negWCount = 0;
 
         if (Matrix.getW(clipV1) <= 0) negWCount++;
         if (Matrix.getW(clipV2) <= 0) negWCount++;
         if (Matrix.getW(clipV3) <= 0) negWCount++;
 
-        if (negWCount == 2) {
-            shCullingTwoBehind(clipV1, clipV2, clipV3);
-        }
-
-
         if (negWCount == 1) {
-            shCullingOneBehind(clipV1, clipV2, clipV3); //assigns to frontV2, intersectionV1 & intersectionV2 directly
+            return shCullingOneBehind(clipV1, clipV2, clipV3); //assigns to frontV2, intersectionV1 & intersectionV2 directly
         }
 
-        if (intersectionV2 != null) {
-            screenFrontV2 = ndcToScreen(clipToNdc(frontV2));
-            screenIntersection1 = ndcToScreen(clipToNdc(intersectionV1));
-            screenIntersection2 = ndcToScreen(clipToNdc(intersectionV2));
+        if (negWCount == 2) {
+            return shCullingTwoBehind(clipV1, clipV2, clipV3);
         }
+
+        if(negWCount == 3) {
+            throw new IllegalStateException();
+        }
+
+        return new float[][]{clipV1, clipV2, clipV3, null, null, null};
     }
+
     private float[] getClipVertex(int idx) {
         return new float[]{
             clipVertices[idx * clipStride],
@@ -222,6 +226,12 @@ public class Renderer {
         }
     }
 
+    /**
+     * culls triangles (from vertices in clipVertices) behind camera or out of frustum &
+     * stores triangle indices (first idx of triangle vertex index in indices) in triangleOrder
+     * @param indices
+     * @return number of triangles after cull (# indices stored in triangleOrder)
+     */
     private int cullOuterTriangles(int[] indices) {
         int triangleCount = 0;
         for (int i = 0; i < indices.length; i += 3) {
@@ -253,17 +263,64 @@ public class Renderer {
             float y = vertices[i * vertexStride + 1];
             float z = vertices[i * vertexStride + 2];
 
-            float[] clipSpaceV = Matrix.matmul(MVP, new float[]{x, y, z, 1});
-
-
-            clipVertices[i * clipStride] = Matrix.getX(clipSpaceV);
-            clipVertices[i * clipStride + 1] = Matrix.getY(clipSpaceV);
-            clipVertices[i * clipStride + 2] = Matrix.getZ(clipSpaceV);
-            clipVertices[i * clipStride + 3] = Matrix.getW(clipSpaceV);
+            //to avoid float[] creation through Matrix.matmul
+            directMatmul(clipVertices, i * clipStride, MVP, x, y, z, 1);
         }
     }
 
-    private void shCullingOneBehind(float[] v1, float[] v2, float[] v3) {
+    /**
+     * Computes matrix @ [x, y, z, w] and stores the resulting vector in storageArray, starting at startIdx
+     * @param storageArray array to store matmul result in
+     * @param startIdx index to start storing matmul result at
+     * @param matrix LHS operator of matmul (4x4 matrix)
+     * @param x 1st coord of RHS operator (vector) of matmul
+     * @param y 2nd coord of RHS operator (vector) of matmul
+     * @param z 3rd coord of RHS operator (vector) of matmul
+     * @param w 4th coord of RHS operator (vector) of matmul
+     */
+    private void directMatmul(float[] storageArray, int startIdx, float[][] matrix, float x, float y, float z, float w) {
+
+        if (matrix.length != 4 || matrix[0].length != 4)
+            throw new IllegalArgumentException("directMatmul only computes @ of 4x4 matrix & vector4");
+
+        float resX = 0;
+        float resY = 0;
+        float resZ = 0;
+        float resW = 0;
+
+        resX += matrix[0][0] * x;
+        resX += matrix[0][1] * y;
+        resX += matrix[0][2] * z;
+        resX += matrix[0][3] * w;
+
+        resY += matrix[1][0] * x;
+        resY += matrix[1][1] * y;
+        resY += matrix[1][2] * z;
+        resY += matrix[1][3] * w;
+
+        resZ += matrix[2][0] * x;
+        resZ += matrix[2][1] * y;
+        resZ += matrix[2][2] * z;
+        resZ += matrix[2][3] * w;
+
+        resW += matrix[3][0] * x;
+        resW += matrix[3][1] * y;
+        resW += matrix[3][2] * z;
+        resW += matrix[3][3] * w;
+
+        storageArray[startIdx] = resX;
+        storageArray[startIdx + 1] = resY;
+        storageArray[startIdx + 2] = resZ;
+        storageArray[startIdx + 3] = resW;
+    }
+    /**
+     *
+     * @param v1
+     * @param v2
+     * @param v3
+     * @return the vertices of the two clipped triangles
+     */
+    private float[][] shCullingOneBehind(float[] v1, float[] v2, float[] v3) {
         float[] behindV, frontV1, frontV2;
 
         if (Matrix.getW(v1) <= 0) {
@@ -291,23 +348,23 @@ public class Renderer {
         float intersectionY2 = Matrix.getY(frontV2) + t2 * (Matrix.getY(behindV) - Matrix.getY(frontV2));
         float intersectionZ2 = Matrix.getZ(frontV2) + t2 * (Matrix.getZ(behindV) - Matrix.getZ(frontV2));
 
+        float[] intersectionV1 = new float[]{intersectionX1, intersectionY1, intersectionZ1, NEAR_PLANE_EPSILON};
+        float[] intersectionV2 = new float[]{intersectionX2, intersectionY2, intersectionZ2, NEAR_PLANE_EPSILON};
 
-        Matrix.setX(behindV, intersectionX1);
-        Matrix.setY(behindV, intersectionY1);
-        Matrix.setZ(behindV, intersectionZ1);
-        Matrix.setW(behindV, NEAR_PLANE_EPSILON);
-
-        float[] newVertex = new float[]{intersectionX2,  intersectionY2, intersectionZ2, NEAR_PLANE_EPSILON};
-
-//        List<float[]> res = new ArrayList<>();
-        this.frontV2 = frontV2;
-        intersectionV1 = behindV;
-        intersectionV2 = newVertex;
-
-//        return res;
+        return new float[][]{
+            frontV1, frontV2, intersectionV1,
+            frontV2, intersectionV1, intersectionV2
+        };
     }
 
-    private static void shCullingTwoBehind(float[] v1, float[] v2, float[] v3) {
+    /**
+     *
+     * @param v1
+     * @param v2
+     * @param v3
+     * @return the vertices of the clipped triangle (unchanged front vertex, intersection V1 & V2) and 3x null (no new triangle)
+     */
+    private static float[][] shCullingTwoBehind(float[] v1, float[] v2, float[] v3) {
         float[] frontV, behindV1, behindV2;
 
         if (Matrix.getW(v1) > 0) {
@@ -335,15 +392,13 @@ public class Renderer {
         float intersectionY2 = Matrix.getY(frontV) + t2 * (Matrix.getY(behindV2) - Matrix.getY(frontV));
         float intersectionZ2 = Matrix.getZ(frontV) + t2 * (Matrix.getZ(behindV2) - Matrix.getZ(frontV));
 
-        Matrix.setX(behindV1, intersectionX1);
-        Matrix.setY(behindV1, intersectionY1);
-        Matrix.setZ(behindV1, intersectionZ1);
-        Matrix.setW(behindV1, NEAR_PLANE_EPSILON);
+        float[] intersectionV1 = new float[]{intersectionX1, intersectionY1, intersectionZ1, NEAR_PLANE_EPSILON};
+        float[] intersectionV2 = new float[]{intersectionX2, intersectionY2, intersectionZ2, NEAR_PLANE_EPSILON};
 
-        Matrix.setX(behindV2, intersectionX2);
-        Matrix.setY(behindV2, intersectionY2);
-        Matrix.setZ(behindV2, intersectionZ2);
-        Matrix.setW(behindV2, NEAR_PLANE_EPSILON);
+        return new float[][]{
+            frontV, intersectionV1, intersectionV2,
+            null, null, null
+        };
     }
 
     boolean inFrustum(int idx) {
@@ -378,9 +433,6 @@ public class Renderer {
             float y2 = vertices[idx2 * vertexStride + 1];
             float z2 = vertices[idx2 * vertexStride + 2];
 
-
-            //TODO Sutherland-Hodgman clipping
-
             float[] clipSpaceV1 = Matrix.matmul(MVP, new float[]{x1, y1, z1, 1});
             float[] clipSpaceV2 = Matrix.matmul(MVP, new float[]{x2, y2, z2, 1});
 
@@ -408,6 +460,18 @@ public class Renderer {
         return Matrix.getX(v) >= -1 && Matrix.getX(v) <= 1 && Matrix.getY(v) >= -1 && Matrix.getY(v) <= 1;
     }
 
+    private float[] clipToScreen(float[] v) {
+        final float w = Matrix.getW(v);
+        final float ndcX = Matrix.getX(v) / w;
+        final float ndcY = Matrix.getY(v) / w;
+//        final float ndcZ = Matrix.getZ(v) / w;
+
+        final float screenX = (ndcX + 1) / 2 * Main.SCREEN_WIDTH;
+        final float screenY = (ndcY + 1) / 2 * Main.SCREEN_HEIGHT;
+
+        return new float[]{screenX, screenY};
+
+    }
     final float[] clipToNdc(float[] clipSpaceV) {
         final float w = Matrix.getW(clipSpaceV);
         final float ndcX = Matrix.getX(clipSpaceV) / w;
