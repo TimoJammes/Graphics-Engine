@@ -1,8 +1,8 @@
 package com.engine;
 
-public interface Behavior {
+interface Behavior {
 
-    public boolean update(Entity entity, float dt);
+    boolean update(Entity entity, float dt);
 }
 
 
