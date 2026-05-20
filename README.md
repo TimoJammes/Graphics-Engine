@@ -1,8 +1,18 @@
 # 3D-Graphics-Engine
 
-A [libGDX](https://libgdx.com/) project generated with [gdx-liftoff](https://github.com/libgdx/gdx-liftoff).
+A [libGDX](https://libgdx.com/) project generated with [gdx-liftoff](https://github.com/libgdx/gdx-liftoff
 
-This project was generated with a template including simple application launchers and an `ApplicationAdapter` extension that draws libGDX logo.
+Features:
+  - rendering modes: wireframe, solid
+  - (multiple) cameras to view a scene and move through 3D space (through Model-View-Projection pipeline)
+  - entity creation by passing a .obj file (and optionally .mtl) 
+  - manual entity creation by creating arrays of vertices & faces
+  - custom entity behaviors
+  - face culling through camera visibiility checks (face-frustum intersection)
+  - near plane Sutherland-Hodgman face clipping
+  - efficient rendering through pre-allocated array manipulation
+  
+  Solely relies on libGDX's line and triangle drawing and coloring functions.
 
 ## Platforms
 
