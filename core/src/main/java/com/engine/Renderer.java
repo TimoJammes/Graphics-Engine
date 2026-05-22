@@ -11,17 +11,17 @@ import java.util.Arrays;
 public class Renderer {
 
     private static final RenderOptions DEFAULT_RENDER_OPTIONS = new RenderOptions();
-    private static final float NEAR_PLANE_EPSILON = 0.01f;
+    static final float NEAR_PLANE_EPSILON = 0.01f;
 
-//    private static final int MAX_VERTICES = 1_000_000;
+    //    private static final int MAX_VERTICES = 1_000_000;
 //    private static final int MAX_TRIANGLES = MAX_VERTICES * 2;
-    private static final int clipStride = 4; //stride of 4 to store w (4th coord) of vertices (clip w = -view z)
+    static final int clipStride = 4; //stride of 4 to store w (4th coord) of vertices (clip w = -view z)
 
-    private static final int vertexStride = 3;
+    static final int vertexStride = 3;
 
     private final ShapeRenderer shapeRenderer;
-    private final ScreenRenderer screenRenderer = new ScreenRenderer(Gdx.graphics.getWidth(),  Gdx.graphics.getHeight());
-
+    private final ScreenRenderer screenRenderer = new ScreenRenderer(Main.SCREEN_WIDTH, Main.SCREEN_HEIGHT);
+    private final WireFrameRenderer wireFrameRenderer = new WireFrameRenderer(screenRenderer);
     //solidRender pre-alloc
     /**
      * stores clip-space vertices
@@ -47,11 +47,6 @@ public class Renderer {
 
     private int currentMaxVertices = 0;
 
-    private int currentMaxVerticesWF = 0;
-    private float[] clipVertexBufferWF;;
-    private int[] visibleEdges;
-    private int[] postClipEdges;
-    private float[] screenVerticesBufferWF;
 
     Renderer(ShapeRenderer shapeRenderer) {
         this.shapeRenderer = shapeRenderer;
@@ -64,15 +59,16 @@ public class Renderer {
 
         float[][] VP = Matrix.matmul(P, V);
 
-        ScreenUtils.clear(scene.backgroundColor);
-//        screenRenderer.clear();
+//        ScreenUtils.clear(scene.backgroundColor);
+        screenRenderer.clear();
+//        screenRenderer.clear(scene.backgroundColor);
 
         for (Entity entity : scene.entities) {
             RenderOptions options = scene.renderOptions.getOrDefault(entity, DEFAULT_RENDER_OPTIONS);
 
             switch (options.renderMode) {
                 case Scene.RenderMode.WIRE_FRAME:
-                    wireFrameRender(entity, VP);
+                    wireFrameRenderer.render(entity, VP);
                     break;
                 case Scene.RenderMode.SOLID:
                     solidRender(entity, VP, options);
@@ -81,12 +77,13 @@ public class Renderer {
                     throw new IllegalStateException("Unsupported render mode");
 
             }
-
         }
+        screenRenderer.present();
     }
 
     /**
      * Re-allocates space in solidRender's buffers if current entity's vertexCount would overflow buffers.
+     *
      * @param vertexCount Current entity's vertex count.
      */
     private void ensureCapacity(int vertexCount) {
@@ -98,15 +95,6 @@ public class Renderer {
         positions = new Integer[currentMaxVertices * 2];
         postClipIndices = new int[currentMaxVertices * 4 * 3];
         screenVerticesBuffer = new float[currentMaxVertices * 4 * 3 * 2];
-    }
-
-    private void ensureCapacityWF(int vertexCount) {
-        if (vertexCount <= currentMaxVerticesWF) return;
-        currentMaxVerticesWF = vertexCount;
-        clipVertexBufferWF = new float[currentMaxVerticesWF * 5 * clipStride];
-        visibleEdges = new int[currentMaxVerticesWF * 2 * 3];
-        postClipEdges = new int[currentMaxVerticesWF * 4 * 3 * 2];
-        screenVerticesBufferWF = new float[currentMaxVerticesWF * 4 * 3 * 2 * 2];
     }
 
     void solidRender(Entity entity, float[][] VP, RenderOptions options) {
@@ -144,12 +132,9 @@ public class Renderer {
             float w3 = clipVertexBuffer[idx3 * clipStride + 3];
 
             int behind = 0;
-            if (w1 <= 0)
-                behind++;
-            if (w2 <= 0)
-                behind++;
-            if (w3 <= 0)
-                behind++;
+            if (w1 <= 0) behind++;
+            if (w2 <= 0) behind++;
+            if (w3 <= 0) behind++;
 
             //fully visible
             if (behind == 0) {
@@ -279,8 +264,7 @@ public class Renderer {
                 screenVerticesBuffer[(i * 3 + j) * 2 + 1] = screenY;
             }
         }
-        if (!options.showWireFrame)
-            shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        if (!options.showWireFrame) shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
 
 
         for (int i = 0; i < postClipTriangleCount; i++) {
@@ -294,12 +278,14 @@ public class Renderer {
 
             setRenderColor(entity, options, i * 3, i * 3 + 1, i * 3 + 2); //pass indices[index] for randomizeTexture
 
-            rasterizeTriangle(options, screenX1, screenY1, screenX2, screenY2, screenX3, screenY3);
+//            rasterizeTriangle(options, screenX1, screenY1, screenX2, screenY2, screenX3, screenY3);
+            if (!(screenX1 >= 0 && screenX1 <= Main.SCREEN_WIDTH && screenY1 >= 0 && screenY1 <= Main.SCREEN_HEIGHT && screenX2 >= 0 && screenX2 <= Main.SCREEN_WIDTH && screenY2 >= 0 && screenY2 <= Main.SCREEN_HEIGHT && screenX3 >= 0 && screenX3 <= Main.SCREEN_WIDTH && screenY3 >= 0 && screenY3 <= Main.SCREEN_HEIGHT)) {
+                System.out.println("(" + screenX1 + "," + screenY1 + "), (" + screenX2 + "," + screenY2 + "), (" + screenX3 + "," + screenY3 + ")");
+            }
             drawTriangle(options, screenX1, screenY1, screenX2, screenY2, screenX3, screenY3);
         }
 
-        if (!options.showWireFrame)
-            shapeRenderer.end();
+        if (!options.showWireFrame) shapeRenderer.end();
     }
 
     private void rasterizeTriangle(RenderOptions options, float v1X, float v1Y, float v2X, float v2Y, float v3X, float v3Y) {
@@ -316,12 +302,7 @@ public class Renderer {
         int hash = (idx1 * 92837111) ^ (idx2 * 689287499) ^ (idx3 * 283823481);
         float offset = ((hash & 0xFF) / 255f - 0.5f) * 0.12f; // range [-0.06, 0.06]
 
-        shapeRenderer.setColor(
-            Math.clamp(entity.color.r + offset, 0, 1),
-            Math.clamp(entity.color.g + offset, 0, 1),
-            Math.clamp(entity.color.b + offset, 0, 1),
-            1f
-        );
+        shapeRenderer.setColor(Math.clamp(entity.color.r + offset, 0, 1), Math.clamp(entity.color.g + offset, 0, 1), Math.clamp(entity.color.b + offset, 0, 1), 1f);
     }
 
     /**
@@ -329,32 +310,18 @@ public class Renderer {
      */
     private void drawTriangle(RenderOptions options, float v1X, float v1Y, float v2X, float v2Y, float v3X, float v3Y) {
 
-        if (options.showWireFrame)
-            shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        if (options.showWireFrame) shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
 
-        shapeRenderer.triangle(
-            v1X, v1Y,
-            v2X, v2Y,
-            v3X, v3Y
-        );
+        shapeRenderer.triangle(v1X, v1Y, v2X, v2Y, v3X, v3Y);
 
         if (options.showWireFrame) {
             shapeRenderer.end();
 
             shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
             shapeRenderer.setColor(Color.BLACK);
-            shapeRenderer.line(
-                v1X, v1Y,
-                v2X, v2Y
-            );
-            shapeRenderer.line(
-                v1X, v1Y,
-                v3X, v3Y
-            );
-            shapeRenderer.line(
-                v2X, v2Y,
-                v3X, v3Y
-            );
+            shapeRenderer.line(v1X, v1Y, v2X, v2Y);
+            shapeRenderer.line(v1X, v1Y, v3X, v3Y);
+            shapeRenderer.line(v2X, v2Y, v3X, v3Y);
             shapeRenderer.end();
         }
     }
@@ -402,12 +369,11 @@ public class Renderer {
 //            // basic NDC bounds check
 //            if (w1 > 0 && w2 > 0 && w3 > 0 && !inFrustum(idx1, clipVertices) && !inFrustum(idx2, clipVertices) && !inFrustum(idx3, clipVertices)) continue;
 
-            boolean cull =
-                (w1 <= 0 && w2 <= 0 && w3 <= 0) ||  // all behind near plane
-                    (x1 > w1 && x2 > w2 && x3 > w3) ||  // all right of right plane
-                    (x1 < -w1 && x2 < -w2 && x3 < -w3) ||  // all left of left plane
-                    (y1 > w1 && y2 > w2 && y3 > w3) ||  // all above top plane
-                    (y1 < -w1 && y2 < -w2 && y3 < -w3);    // all below bottom plane
+            boolean cull = (w1 <= 0 && w2 <= 0 && w3 <= 0) ||  // all behind near plane
+                (x1 > w1 && x2 > w2 && x3 > w3) ||  // all right of right plane
+                (x1 < -w1 && x2 < -w2 && x3 < -w3) ||  // all left of left plane
+                (y1 > w1 && y2 > w2 && y3 > w3) ||  // all above top plane
+                (y1 < -w1 && y2 < -w2 && y3 < -w3);    // all below bottom plane
 
             if (cull) continue;
 
@@ -423,7 +389,7 @@ public class Renderer {
      * @param MVP:      model-view-projection matrix
      * @param out:      store computed vertices here (x, y, z, w)
      */
-    private void computeClipVertices(float[] vertices, float[][] MVP, float[] out) {
+    static void computeClipVertices(float[] vertices, float[][] MVP, float[] out) {
         for (int i = 0; i < vertices.length / vertexStride; i++) {
 
             float x = vertices[i * vertexStride];
@@ -446,7 +412,7 @@ public class Renderer {
      * @param z            3rd coord of RHS operator (vector) of matmul
      * @param w            4th coord of RHS operator (vector) of matmul
      */
-    private void directMatmul(float[] storageArray, int startIdx, float[][] matrix, float x, float y, float z, float w) {
+    static void directMatmul(float[] storageArray, int startIdx, float[][] matrix, float x, float y, float z, float w) {
 
         assert matrix.length == 4 && matrix[0].length == 4;
 
@@ -484,155 +450,6 @@ public class Renderer {
         storageArray[startIdx + 3] = resW;
     }
 
-    void wireFrameRender(Entity entity, float[][] VP) {
-
-        ensureCapacityWF(entity.mesh.vertices.length / vertexStride);
-
-        float[][] MVP = Matrix.matmul(VP, entity.transform.toMatrix()); //Model-View-Projection Matrix
-
-        final float[] vertices = entity.mesh.vertices;
-        final int[] edges = entity.mesh.edges;
-
-
-        computeClipVertices(vertices, MVP, clipVertexBufferWF);
-
-        int edgeCount = cullOuterEdges(edges, clipVertexBufferWF, visibleEdges);
-
-        int totalVertices = vertices.length / vertexStride;
-
-        int postClipEdgeCount = 0;
-        for (int i = 0; i < edgeCount; i++) {
-            int idx = visibleEdges[i];
-
-            int idx1 = edges[idx];
-            int idx2 = edges[idx + 1];
-
-            float w1 = clipVertexBufferWF[idx1 * clipStride + 3];
-            float w2 = clipVertexBufferWF[idx2 * clipStride + 3];
-
-            int behind = 0;
-            if (w1 <= 0)
-                behind++;
-            if (w2 <= 0)
-                behind++;
-
-            //fully visible
-            if (behind == 0) {
-                postClipEdges[postClipEdgeCount * 2] = idx1;
-                postClipEdges[postClipEdgeCount * 2 + 1] = idx2;
-                postClipEdgeCount++;
-            } else if (behind == 1) {
-
-                int behindIdx, frontIdx;
-
-                if (w1 <= 0) {
-                    behindIdx = idx1;
-                    frontIdx = idx2;
-                } else {
-                    behindIdx = idx2;
-                    frontIdx = idx1;
-                }
-
-                int f = frontIdx * clipStride;
-                int bh = behindIdx * clipStride;
-
-                float t = clipVertexBufferWF[f + 3] / (clipVertexBufferWF[f + 3] - clipVertexBufferWF[bh + 3]);
-
-                float intersectionX = clipVertexBufferWF[f] + t * (clipVertexBufferWF[bh] - clipVertexBufferWF[f]);
-                float intersectionY = clipVertexBufferWF[f + 1] + t * (clipVertexBufferWF[bh + 1] - clipVertexBufferWF[f + 1]);
-                float intersectionZ = clipVertexBufferWF[f + 2] + t * (clipVertexBufferWF[bh + 2] - clipVertexBufferWF[f + 2]);
-
-                clipVertexBufferWF[totalVertices * clipStride] = intersectionX;
-                clipVertexBufferWF[totalVertices * clipStride + 1] = intersectionY;
-                clipVertexBufferWF[totalVertices * clipStride + 2] = intersectionZ;
-                clipVertexBufferWF[totalVertices * clipStride + 3] = NEAR_PLANE_EPSILON;
-                postClipEdges[postClipEdgeCount * 3] = frontIdx;
-                postClipEdges[postClipEdgeCount * 3 + 1] = totalVertices;
-                totalVertices++;
-                postClipEdgeCount++;
-
-            } else {
-                throw new IllegalStateException();
-            }
-        }
-
-
-        for (int i = 0; i < postClipEdgeCount; i++) {
-
-            for (int j = 0; j < 2; j++) {
-                int idx = postClipEdges[i * 2 + j];
-
-                final float w = clipVertexBufferWF[idx * clipStride + 3];
-                final float ndcX = clipVertexBufferWF[idx * clipStride] / w;
-                final float ndcY = clipVertexBufferWF[idx * clipStride + 1] / w;
-
-                final float screenX = (ndcX + 1) / 2 * Main.SCREEN_WIDTH;
-                final float screenY = (ndcY + 1) / 2 * Main.SCREEN_HEIGHT;
-
-                screenVerticesBufferWF[(i * 2 + j) * 2] = screenX;
-                screenVerticesBufferWF[(i * 2 + j) * 2 + 1] = screenY;
-            }
-        }
-
-        shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
-        shapeRenderer.setColor(entity.color);
-
-        for (int i = 0; i < postClipEdgeCount; i++) {
-
-            float screenX1 = screenVerticesBufferWF[i * 2 * 2];
-            float screenY1 = screenVerticesBufferWF[i * 2 * 2 + 1];
-            float screenX2 = screenVerticesBufferWF[(i * 2 + 1) * 2];
-            float screenY2 = screenVerticesBufferWF[(i * 2 + 1) * 2 + 1];
-
-
-            shapeRenderer.line(
-                screenX1, screenY1,
-                screenX2, screenY2
-            );
-        }
-
-        shapeRenderer.end();
-    }
-
-    private int cullOuterEdges(int[] edges, float[] clipVertices, int[] out) {
-        int edgeCount = 0;
-        for (int i = 0; i < edges.length; i += 2) {
-            int idx1 = edges[i];
-            int idx2 = edges[i + 1];
-
-            float x1 = clipVertices[idx1 * clipStride], y1 = clipVertices[idx1 * clipStride + 1];
-            float x2 = clipVertices[idx2 * clipStride], y2 = clipVertices[idx2 * clipStride + 1];
-            float w1 = clipVertices[idx1 * clipStride + 3], w2 = clipVertices[idx2 * clipStride + 3];
-
-            boolean cull =
-                (w1 <= 0 && w2 <= 0) ||  // all behind near plane
-                    (x1 > w1 && x2 > w2) ||  // all right of right plane
-                    (x1 < -w1 && x2 < -w2) ||  // all left of left plane
-                    (y1 > w1 && y2 > w2) ||  // all above top plane
-                    (y1 < -w1 && y2 < -w2);    // all below bottom plane
-
-            if (cull) continue;
-
-            out[edgeCount++] = i;  // only add visible edges
-        }
-        return edgeCount;
-    }
-
-    void drawLine(int x0, int y0, int x1, int y1, float r, float g, float b) {
-        int dx = Math.abs(x1 - x0);
-        int dy = Math.abs(y1 - y0);
-        int sx = x0 < x1 ? 1 : -1;  // step direction in X
-        int sy = y0 < y1 ? 1 : -1;  // step direction in Y
-        int err = dx - dy;
-
-        while (true) {
-            screenRenderer.setPixel(x0, Gdx.graphics.getHeight()-y0, (byte)(r * 255), (byte)(g * 255), (byte)(b * 255));
-            if (x0 == x1 && y0 == y1) break;
-            int e2 = 2 * err;
-            if (e2 > -dy) { err -= dy; x0 += sx; }
-            if (e2 <  dx) { err += dx; y0 += sy; }
-        }
-    }
 
     boolean inNDC(float[] v) {
         return Matrix.getX(v) >= -1 && Matrix.getX(v) <= 1 && Matrix.getY(v) >= -1 && Matrix.getY(v) <= 1;
