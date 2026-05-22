@@ -1,5 +1,6 @@
 package com.engine;
 
+import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.utils.ScreenUtils;
@@ -10,8 +11,6 @@ import java.util.Arrays;
 public class Renderer {
 
     private static final RenderOptions DEFAULT_RENDER_OPTIONS = new RenderOptions();
-    private final ShapeRenderer shapeRenderer;
-
     private static final float NEAR_PLANE_EPSILON = 0.01f;
 
 //    private static final int MAX_VERTICES = 1_000_000;
@@ -20,15 +19,39 @@ public class Renderer {
 
     private static final int vertexStride = 3;
 
+    private final ShapeRenderer shapeRenderer;
+    private final ScreenRenderer screenRenderer = new ScreenRenderer(Gdx.graphics.getWidth(),  Gdx.graphics.getHeight());
+
     //solidRender pre-alloc
-    private float[] vertexBuffer;// = new float[MAX_VERTICES * clipStride];
+    /**
+     * stores clip-space vertices
+     */
+    private float[] clipVertexBuffer;// = new float[MAX_VERTICES * clipStride];
+    /**
+     * stores indices of non-culled triangles (each index points to the first index of a triangle in indices)
+     */
     private int[] triangleOrder;// = new int[MAX_TRIANGLES];
+    /**
+     * stores clip-space triangle average z (used to sort positions)
+     */
     float[] avgZBuffer;// = new float[MAX_TRIANGLES];
+    /**
+     * stores ordered indices of triangleOrder based on avgZBuffer value of the triangles
+     */
     Integer[] positions;// = new Integer[MAX_TRIANGLES];
+    /**
+     * stores the
+     */
     private int[] postClipIndices;// = new int[MAX_TRIANGLES * 2 * 3]; // * 2 for clipping, * 3 for 3 vertex indices
     private float[] screenVerticesBuffer;// = new float[MAX_TRIANGLES * 2 * 2 * 3]; //*2 for possible extra triangle from SH clipping, *2 for x and y, *3 for 3 vertices per triangle
 
     private int currentMaxVertices = 0;
+
+    private int currentMaxVerticesWF = 0;
+    private float[] clipVertexBufferWF;;
+    private int[] visibleEdges;
+    private int[] postClipEdges;
+    private float[] screenVerticesBufferWF;
 
     Renderer(ShapeRenderer shapeRenderer) {
         this.shapeRenderer = shapeRenderer;
@@ -42,6 +65,7 @@ public class Renderer {
         float[][] VP = Matrix.matmul(P, V);
 
         ScreenUtils.clear(scene.backgroundColor);
+//        screenRenderer.clear();
 
         for (Entity entity : scene.entities) {
             RenderOptions options = scene.renderOptions.getOrDefault(entity, DEFAULT_RENDER_OPTIONS);
@@ -61,10 +85,14 @@ public class Renderer {
         }
     }
 
+    /**
+     * Re-allocates space in solidRender's buffers if current entity's vertexCount would overflow buffers.
+     * @param vertexCount Current entity's vertex count.
+     */
     private void ensureCapacity(int vertexCount) {
         if (vertexCount <= currentMaxVertices) return;
         currentMaxVertices = vertexCount;
-        vertexBuffer = new float[currentMaxVertices * 5 * clipStride];
+        clipVertexBuffer = new float[currentMaxVertices * 5 * clipStride];
         triangleOrder = new int[currentMaxVertices * 2];
         avgZBuffer = new float[currentMaxVertices * 2];
         positions = new Integer[currentMaxVertices * 2];
@@ -72,21 +100,30 @@ public class Renderer {
         screenVerticesBuffer = new float[currentMaxVertices * 4 * 3 * 2];
     }
 
+    private void ensureCapacityWF(int vertexCount) {
+        if (vertexCount <= currentMaxVerticesWF) return;
+        currentMaxVerticesWF = vertexCount;
+        clipVertexBufferWF = new float[currentMaxVerticesWF * 5 * clipStride];
+        visibleEdges = new int[currentMaxVerticesWF * 2 * 3];
+        postClipEdges = new int[currentMaxVerticesWF * 4 * 3 * 2];
+        screenVerticesBufferWF = new float[currentMaxVerticesWF * 4 * 3 * 2 * 2];
+    }
+
     void solidRender(Entity entity, float[][] VP, RenderOptions options) {
 
         ensureCapacity(entity.mesh.vertices.length / vertexStride);
-//        System.out.println(currentMaxVertices);
+
         float[][] MVP = Matrix.matmul(VP, entity.transform.toMatrix()); //Model-View-Projection Matrix
 
         final float[] vertices = entity.mesh.vertices;
         final int[] indices = entity.mesh.indices;
 
 
-        computeClipVertices(vertices, MVP, vertexBuffer);
+        computeClipVertices(vertices, MVP, clipVertexBuffer);
 
-        int triangleCount = cullOuterTriangles(indices, vertexBuffer, triangleOrder);
+        int triangleCount = cullOuterTriangles(indices, clipVertexBuffer, triangleOrder);
 
-        computeAvgClipZ(triangleCount, triangleOrder, indices, vertexBuffer, avgZBuffer);
+        computeAvgClipZ(triangleCount, triangleOrder, indices, clipVertexBuffer, avgZBuffer);
 
         for (int i = 0; i < triangleCount; i++) positions[i] = i; //to sort triangles by avg z values
 
@@ -102,9 +139,9 @@ public class Renderer {
             int idx2 = indices[idx + 1];
             int idx3 = indices[idx + 2];
 
-            float w1 = vertexBuffer[idx1 * clipStride + 3];
-            float w2 = vertexBuffer[idx2 * clipStride + 3];
-            float w3 = vertexBuffer[idx3 * clipStride + 3];
+            float w1 = clipVertexBuffer[idx1 * clipStride + 3];
+            float w2 = clipVertexBuffer[idx2 * clipStride + 3];
+            float w3 = clipVertexBuffer[idx3 * clipStride + 3];
 
             int behind = 0;
             if (w1 <= 0)
@@ -142,31 +179,31 @@ public class Renderer {
                 int f2 = frontIdx2 * clipStride;
                 int bh = behindIdx * clipStride;
 
-                float t1 = vertexBuffer[f1 + 3] / (vertexBuffer[f1 + 3] - vertexBuffer[bh + 3]);
-                float t2 = vertexBuffer[f2 + 3] / (vertexBuffer[f2 + 3] - vertexBuffer[bh + 3]);
+                float t1 = clipVertexBuffer[f1 + 3] / (clipVertexBuffer[f1 + 3] - clipVertexBuffer[bh + 3]);
+                float t2 = clipVertexBuffer[f2 + 3] / (clipVertexBuffer[f2 + 3] - clipVertexBuffer[bh + 3]);
 
-                float intersectionX1 = vertexBuffer[f1] + t1 * (vertexBuffer[bh] - vertexBuffer[f1]);
-                float intersectionY1 = vertexBuffer[f1 + 1] + t1 * (vertexBuffer[bh + 1] - vertexBuffer[f1 + 1]);
-                float intersectionZ1 = vertexBuffer[f1 + 2] + t1 * (vertexBuffer[bh + 2] - vertexBuffer[f1 + 2]);
+                float intersectionX1 = clipVertexBuffer[f1] + t1 * (clipVertexBuffer[bh] - clipVertexBuffer[f1]);
+                float intersectionY1 = clipVertexBuffer[f1 + 1] + t1 * (clipVertexBuffer[bh + 1] - clipVertexBuffer[f1 + 1]);
+                float intersectionZ1 = clipVertexBuffer[f1 + 2] + t1 * (clipVertexBuffer[bh + 2] - clipVertexBuffer[f1 + 2]);
 
-                float intersectionX2 = vertexBuffer[f2] + t2 * (vertexBuffer[bh] - vertexBuffer[f2]);
-                float intersectionY2 = vertexBuffer[f2 + 1] + t2 * (vertexBuffer[bh + 1] - vertexBuffer[f2 + 1]);
-                float intersectionZ2 = vertexBuffer[f2 + 2] + t2 * (vertexBuffer[bh + 2] - vertexBuffer[f2 + 2]);
+                float intersectionX2 = clipVertexBuffer[f2] + t2 * (clipVertexBuffer[bh] - clipVertexBuffer[f2]);
+                float intersectionY2 = clipVertexBuffer[f2 + 1] + t2 * (clipVertexBuffer[bh + 1] - clipVertexBuffer[f2 + 1]);
+                float intersectionZ2 = clipVertexBuffer[f2 + 2] + t2 * (clipVertexBuffer[bh + 2] - clipVertexBuffer[f2 + 2]);
 
-                vertexBuffer[totalVertices * clipStride] = intersectionX1;
-                vertexBuffer[totalVertices * clipStride + 1] = intersectionY1;
-                vertexBuffer[totalVertices * clipStride + 2] = intersectionZ1;
-                vertexBuffer[totalVertices * clipStride + 3] = NEAR_PLANE_EPSILON;
+                clipVertexBuffer[totalVertices * clipStride] = intersectionX1;
+                clipVertexBuffer[totalVertices * clipStride + 1] = intersectionY1;
+                clipVertexBuffer[totalVertices * clipStride + 2] = intersectionZ1;
+                clipVertexBuffer[totalVertices * clipStride + 3] = NEAR_PLANE_EPSILON;
                 postClipIndices[postClipTriangleCount * 3] = frontIdx1;
                 postClipIndices[postClipTriangleCount * 3 + 1] = frontIdx2;
                 postClipIndices[postClipTriangleCount * 3 + 2] = totalVertices;
                 totalVertices++;
                 postClipTriangleCount++;
 
-                vertexBuffer[totalVertices * clipStride] = intersectionX2;
-                vertexBuffer[totalVertices * clipStride + 1] = intersectionY2;
-                vertexBuffer[totalVertices * clipStride + 2] = intersectionZ2;
-                vertexBuffer[totalVertices * clipStride + 3] = NEAR_PLANE_EPSILON;
+                clipVertexBuffer[totalVertices * clipStride] = intersectionX2;
+                clipVertexBuffer[totalVertices * clipStride + 1] = intersectionY2;
+                clipVertexBuffer[totalVertices * clipStride + 2] = intersectionZ2;
+                clipVertexBuffer[totalVertices * clipStride + 3] = NEAR_PLANE_EPSILON;
 
                 postClipIndices[postClipTriangleCount * 3] = frontIdx2;
                 postClipIndices[postClipTriangleCount * 3 + 1] = totalVertices - 1;
@@ -196,29 +233,29 @@ public class Renderer {
                 int b1 = behindIdx1 * clipStride;
                 int b2 = behindIdx2 * clipStride;
 
-                float t1 = vertexBuffer[f + 3] / (vertexBuffer[f + 3] - vertexBuffer[b1 + 3]);
-                float t2 = vertexBuffer[f + 3] / (vertexBuffer[f + 3] - vertexBuffer[b2 + 3]);
+                float t1 = clipVertexBuffer[f + 3] / (clipVertexBuffer[f + 3] - clipVertexBuffer[b1 + 3]);
+                float t2 = clipVertexBuffer[f + 3] / (clipVertexBuffer[f + 3] - clipVertexBuffer[b2 + 3]);
 
-                float intersectionX1 = vertexBuffer[f] + t1 * (vertexBuffer[b1] - vertexBuffer[f]);
-                float intersectionY1 = vertexBuffer[f + 1] + t1 * (vertexBuffer[b1 + 1] - vertexBuffer[f + 1]);
-                float intersectionZ1 = vertexBuffer[f + 2] + t1 * (vertexBuffer[b1 + 2] - vertexBuffer[f + 2]);
+                float intersectionX1 = clipVertexBuffer[f] + t1 * (clipVertexBuffer[b1] - clipVertexBuffer[f]);
+                float intersectionY1 = clipVertexBuffer[f + 1] + t1 * (clipVertexBuffer[b1 + 1] - clipVertexBuffer[f + 1]);
+                float intersectionZ1 = clipVertexBuffer[f + 2] + t1 * (clipVertexBuffer[b1 + 2] - clipVertexBuffer[f + 2]);
 
-                float intersectionX2 = vertexBuffer[f] + t2 * (vertexBuffer[b2] - vertexBuffer[f]);
-                float intersectionY2 = vertexBuffer[f + 1] + t2 * (vertexBuffer[b2 + 1] - vertexBuffer[f + 1]);
-                float intersectionZ2 = vertexBuffer[f + 2] + t2 * (vertexBuffer[b2 + 2] - vertexBuffer[f + 2]);
+                float intersectionX2 = clipVertexBuffer[f] + t2 * (clipVertexBuffer[b2] - clipVertexBuffer[f]);
+                float intersectionY2 = clipVertexBuffer[f + 1] + t2 * (clipVertexBuffer[b2 + 1] - clipVertexBuffer[f + 1]);
+                float intersectionZ2 = clipVertexBuffer[f + 2] + t2 * (clipVertexBuffer[b2 + 2] - clipVertexBuffer[f + 2]);
 
 
                 postClipIndices[postClipTriangleCount * 3] = frontIdx;
-                vertexBuffer[totalVertices * clipStride] = intersectionX1;
-                vertexBuffer[totalVertices * clipStride + 1] = intersectionY1;
-                vertexBuffer[totalVertices * clipStride + 2] = intersectionZ1;
-                vertexBuffer[totalVertices * clipStride + 3] = NEAR_PLANE_EPSILON;
+                clipVertexBuffer[totalVertices * clipStride] = intersectionX1;
+                clipVertexBuffer[totalVertices * clipStride + 1] = intersectionY1;
+                clipVertexBuffer[totalVertices * clipStride + 2] = intersectionZ1;
+                clipVertexBuffer[totalVertices * clipStride + 3] = NEAR_PLANE_EPSILON;
                 postClipIndices[postClipTriangleCount * 3 + 1] = totalVertices;
                 totalVertices++;
-                vertexBuffer[totalVertices * clipStride] = intersectionX2;
-                vertexBuffer[totalVertices * clipStride + 1] = intersectionY2;
-                vertexBuffer[totalVertices * clipStride + 2] = intersectionZ2;
-                vertexBuffer[totalVertices * clipStride + 3] = NEAR_PLANE_EPSILON;
+                clipVertexBuffer[totalVertices * clipStride] = intersectionX2;
+                clipVertexBuffer[totalVertices * clipStride + 1] = intersectionY2;
+                clipVertexBuffer[totalVertices * clipStride + 2] = intersectionZ2;
+                clipVertexBuffer[totalVertices * clipStride + 3] = NEAR_PLANE_EPSILON;
                 postClipIndices[postClipTriangleCount * 3 + 2] = totalVertices;
                 totalVertices++;
                 postClipTriangleCount++;
@@ -231,9 +268,9 @@ public class Renderer {
             for (int j = 0; j < 3; j++) {
                 int idx = postClipIndices[i * 3 + j];
 
-                final float w = vertexBuffer[idx * clipStride + 3];
-                final float ndcX = vertexBuffer[idx * clipStride] / w;
-                final float ndcY = vertexBuffer[idx * clipStride + 1] / w;
+                final float w = clipVertexBuffer[idx * clipStride + 3];
+                final float ndcX = clipVertexBuffer[idx * clipStride] / w;
+                final float ndcY = clipVertexBuffer[idx * clipStride + 1] / w;
 
                 final float screenX = (ndcX + 1) / 2 * Main.SCREEN_WIDTH;
                 final float screenY = (ndcY + 1) / 2 * Main.SCREEN_HEIGHT;
@@ -257,12 +294,16 @@ public class Renderer {
 
             setRenderColor(entity, options, i * 3, i * 3 + 1, i * 3 + 2); //pass indices[index] for randomizeTexture
 
-            //draws 1 triangle (first triplet of vertices) or 2 if SH-clipping with 2 vertices behind camera (second triplet of vertices)
+            rasterizeTriangle(options, screenX1, screenY1, screenX2, screenY2, screenX3, screenY3);
             drawTriangle(options, screenX1, screenY1, screenX2, screenY2, screenX3, screenY3);
         }
 
         if (!options.showWireFrame)
             shapeRenderer.end();
+    }
+
+    private void rasterizeTriangle(RenderOptions options, float v1X, float v1Y, float v2X, float v2Y, float v3X, float v3Y) {
+
     }
 
     private void setRenderColor(Entity entity, RenderOptions options, int idx1, int idx2, int idx3) {
@@ -284,8 +325,7 @@ public class Renderer {
     }
 
     /**
-     * draws triangle connecting v1, v2, v3 by default.
-     * if 2 vertices were behind camera, 2 triangles drawn through Sutherland-Hodgman clipping wrt near-plane.
+     * draws triangle connecting v1, v2, v3.
      */
     private void drawTriangle(RenderOptions options, float v1X, float v1Y, float v2X, float v2Y, float v3X, float v3Y) {
 
@@ -445,49 +485,153 @@ public class Renderer {
     }
 
     void wireFrameRender(Entity entity, float[][] VP) {
-        shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
-        shapeRenderer.setColor(entity.color);
 
-        float[][] MVP = Matrix.matmul(VP, entity.transform.toMatrix());
+        ensureCapacityWF(entity.mesh.vertices.length / vertexStride);
+
+        float[][] MVP = Matrix.matmul(VP, entity.transform.toMatrix()); //Model-View-Projection Matrix
 
         final float[] vertices = entity.mesh.vertices;
-
         final int[] edges = entity.mesh.edges;
 
 
-        for (int i = 0; i < edges.length; i += 2) {
-            int idx1 = edges[i];
-            int idx2 = edges[i + 1];
+        computeClipVertices(vertices, MVP, clipVertexBufferWF);
 
-            float x1 = vertices[idx1 * vertexStride];
-            float y1 = vertices[idx1 * vertexStride + 1];
-            float z1 = vertices[idx1 * vertexStride + 2];
+        int edgeCount = cullOuterEdges(edges, clipVertexBufferWF, visibleEdges);
 
-            float x2 = vertices[idx2 * vertexStride];
-            float y2 = vertices[idx2 * vertexStride + 1];
-            float z2 = vertices[idx2 * vertexStride + 2];
+        int totalVertices = vertices.length / vertexStride;
 
-            float[] clipSpaceV1 = Matrix.matmul(MVP, new float[]{x1, y1, z1, 1});
-            float[] clipSpaceV2 = Matrix.matmul(MVP, new float[]{x2, y2, z2, 1});
+        int postClipEdgeCount = 0;
+        for (int i = 0; i < edgeCount; i++) {
+            int idx = visibleEdges[i];
 
-            if (Matrix.getW(clipSpaceV1) <= 0 && Matrix.getW(clipSpaceV2) <= 0) continue;
+            int idx1 = edges[idx];
+            int idx2 = edges[idx + 1];
 
-            float[] ndcSpaceV1 = clipToNdc(clipSpaceV1);
-            float[] ndcSpaceV2 = clipToNdc(clipSpaceV2);
+            float w1 = clipVertexBufferWF[idx1 * clipStride + 3];
+            float w2 = clipVertexBufferWF[idx2 * clipStride + 3];
+
+            int behind = 0;
+            if (w1 <= 0)
+                behind++;
+            if (w2 <= 0)
+                behind++;
+
+            //fully visible
+            if (behind == 0) {
+                postClipEdges[postClipEdgeCount * 2] = idx1;
+                postClipEdges[postClipEdgeCount * 2 + 1] = idx2;
+                postClipEdgeCount++;
+            } else if (behind == 1) {
+
+                int behindIdx, frontIdx;
+
+                if (w1 <= 0) {
+                    behindIdx = idx1;
+                    frontIdx = idx2;
+                } else {
+                    behindIdx = idx2;
+                    frontIdx = idx1;
+                }
+
+                int f = frontIdx * clipStride;
+                int bh = behindIdx * clipStride;
+
+                float t = clipVertexBufferWF[f + 3] / (clipVertexBufferWF[f + 3] - clipVertexBufferWF[bh + 3]);
+
+                float intersectionX = clipVertexBufferWF[f] + t * (clipVertexBufferWF[bh] - clipVertexBufferWF[f]);
+                float intersectionY = clipVertexBufferWF[f + 1] + t * (clipVertexBufferWF[bh + 1] - clipVertexBufferWF[f + 1]);
+                float intersectionZ = clipVertexBufferWF[f + 2] + t * (clipVertexBufferWF[bh + 2] - clipVertexBufferWF[f + 2]);
+
+                clipVertexBufferWF[totalVertices * clipStride] = intersectionX;
+                clipVertexBufferWF[totalVertices * clipStride + 1] = intersectionY;
+                clipVertexBufferWF[totalVertices * clipStride + 2] = intersectionZ;
+                clipVertexBufferWF[totalVertices * clipStride + 3] = NEAR_PLANE_EPSILON;
+                postClipEdges[postClipEdgeCount * 3] = frontIdx;
+                postClipEdges[postClipEdgeCount * 3 + 1] = totalVertices;
+                totalVertices++;
+                postClipEdgeCount++;
+
+            } else {
+                throw new IllegalStateException();
+            }
+        }
 
 
-            if (!inNDC(ndcSpaceV1) && !inNDC(ndcSpaceV2)) continue;
+        for (int i = 0; i < postClipEdgeCount; i++) {
 
-            float[] screenV1 = ndcToScreen(ndcSpaceV1);
-            float[] screenV2 = ndcToScreen(ndcSpaceV2);
+            for (int j = 0; j < 2; j++) {
+                int idx = postClipEdges[i * 2 + j];
+
+                final float w = clipVertexBufferWF[idx * clipStride + 3];
+                final float ndcX = clipVertexBufferWF[idx * clipStride] / w;
+                final float ndcY = clipVertexBufferWF[idx * clipStride + 1] / w;
+
+                final float screenX = (ndcX + 1) / 2 * Main.SCREEN_WIDTH;
+                final float screenY = (ndcY + 1) / 2 * Main.SCREEN_HEIGHT;
+
+                screenVerticesBufferWF[(i * 2 + j) * 2] = screenX;
+                screenVerticesBufferWF[(i * 2 + j) * 2 + 1] = screenY;
+            }
+        }
+
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
+        shapeRenderer.setColor(entity.color);
+
+        for (int i = 0; i < postClipEdgeCount; i++) {
+
+            float screenX1 = screenVerticesBufferWF[i * 2 * 2];
+            float screenY1 = screenVerticesBufferWF[i * 2 * 2 + 1];
+            float screenX2 = screenVerticesBufferWF[(i * 2 + 1) * 2];
+            float screenY2 = screenVerticesBufferWF[(i * 2 + 1) * 2 + 1];
+
 
             shapeRenderer.line(
-                Matrix.getX(screenV1), Matrix.getY(screenV1),
-                Matrix.getX(screenV2), Matrix.getY(screenV2)
+                screenX1, screenY1,
+                screenX2, screenY2
             );
         }
 
         shapeRenderer.end();
+    }
+
+    private int cullOuterEdges(int[] edges, float[] clipVertices, int[] out) {
+        int edgeCount = 0;
+        for (int i = 0; i < edges.length; i += 2) {
+            int idx1 = edges[i];
+            int idx2 = edges[i + 1];
+
+            float x1 = clipVertices[idx1 * clipStride], y1 = clipVertices[idx1 * clipStride + 1];
+            float x2 = clipVertices[idx2 * clipStride], y2 = clipVertices[idx2 * clipStride + 1];
+            float w1 = clipVertices[idx1 * clipStride + 3], w2 = clipVertices[idx2 * clipStride + 3];
+
+            boolean cull =
+                (w1 <= 0 && w2 <= 0) ||  // all behind near plane
+                    (x1 > w1 && x2 > w2) ||  // all right of right plane
+                    (x1 < -w1 && x2 < -w2) ||  // all left of left plane
+                    (y1 > w1 && y2 > w2) ||  // all above top plane
+                    (y1 < -w1 && y2 < -w2);    // all below bottom plane
+
+            if (cull) continue;
+
+            out[edgeCount++] = i;  // only add visible edges
+        }
+        return edgeCount;
+    }
+
+    void drawLine(int x0, int y0, int x1, int y1, float r, float g, float b) {
+        int dx = Math.abs(x1 - x0);
+        int dy = Math.abs(y1 - y0);
+        int sx = x0 < x1 ? 1 : -1;  // step direction in X
+        int sy = y0 < y1 ? 1 : -1;  // step direction in Y
+        int err = dx - dy;
+
+        while (true) {
+            screenRenderer.setPixel(x0, Gdx.graphics.getHeight()-y0, (byte)(r * 255), (byte)(g * 255), (byte)(b * 255));
+            if (x0 == x1 && y0 == y1) break;
+            int e2 = 2 * err;
+            if (e2 > -dy) { err -= dy; x0 += sx; }
+            if (e2 <  dx) { err += dx; y0 += sy; }
+        }
     }
 
     boolean inNDC(float[] v) {
