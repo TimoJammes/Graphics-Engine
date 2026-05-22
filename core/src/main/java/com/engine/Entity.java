@@ -22,7 +22,7 @@ public class Entity implements Movable {
         this.mesh = mesh;
         this.color = color;
 
-        System.out.println(mesh.vertices.length / 3);
+//        System.out.println(mesh.vertices.length / 3);
     }
 
     public Entity(Mesh mesh, Color color) {
@@ -38,6 +38,7 @@ public class Entity implements Movable {
         }
 
         Mesh mesh1 = new Mesh(res.vertices, res.indices);
+//        Mesh mesh1 = new Mesh(res.vertices, res.normals, res.indices);
 
         this(mesh1, res.color);
     }
