@@ -61,9 +61,9 @@ class TeapotScene extends Scene {
 
 
 }
-class AnimalScene extends Scene {
+class MultiScene extends Scene {
 
-    AnimalScene() {
+    MultiScene() {
 
         backgroundColor = Color.BLUE;
 
@@ -104,22 +104,37 @@ class AnimalScene extends Scene {
     }
 
 }
+
+class AnimalScene extends Scene {
+
+    AnimalScene() {
+        backgroundColor = Color.BLUE;
+        Entity animal = new Entity("OBJ-animals/animal-beaver.obj");
+        animal.color = Color.BROWN;
+
+        animal.setPos(0, 0, -3);
+//        animal.behaviors.add(new RotateBehavior(Math.PI, new float[]{0, 1, 0}));
+        renderOptions.put(animal, new RenderOptions(RenderMode.WIRE_FRAME, false, true));
+
+        entities.add(animal);
+    }
+}
 class GroundScene extends Scene {
 
-    GroundScene() {
+    GroundScene(int tilesX, int tilesY) {
 
         backgroundColor = Color.BLUE;
 
 
-        Entity ground = new GroundEntity(Color.GREEN, 10, 10);
+        Entity ground = new GroundEntity(Color.GREEN, tilesX, tilesY);
 
         ground.setPos(0, -.5f, 0);
-        float scale = 1f;
+        float scale = 0.1f;
         ground.setScale(scale, scale, scale);
 
         addEntity(ground);
 
-        renderOptions.put(ground, new RenderOptions(RenderMode.WIRE_FRAME, false, true));
+        renderOptions.put(ground, new RenderOptions(RenderMode.WIRE_FRAME, true, false));
 
     }
 }
