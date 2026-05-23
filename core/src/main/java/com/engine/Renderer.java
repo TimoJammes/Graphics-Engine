@@ -15,6 +15,8 @@ public class Renderer {
 
     static final int VERTEX_STRIDE = 3;
 
+    static final int[][] CLIP_PLANES = {{2, 1}, {2, -1}, {0, 1}, {0, -1}, {1, 1}, {1, -1}};
+
     private final ShapeRenderer shapeRenderer;
     private final ScreenRenderer screenRenderer = new ScreenRenderer(Main.SCREEN_WIDTH, Main.SCREEN_HEIGHT);
     private final WireFrameRenderer wireFrameRenderer = new WireFrameRenderer(screenRenderer);
@@ -23,7 +25,7 @@ public class Renderer {
 
     Renderer(ShapeRenderer shapeRenderer) {
         this.shapeRenderer = shapeRenderer;
-        solidRenderer = new SolidRenderer(shapeRenderer);
+        solidRenderer = new SolidRenderer(screenRenderer);
     }
 
     void renderScene(Scene scene, Camera camera) {
@@ -33,9 +35,9 @@ public class Renderer {
 
         float[][] VP = Matrix.matmul(P, V);
 
-        ScreenUtils.clear(scene.backgroundColor);
+//        ScreenUtils.clear(scene.backgroundColor);
 //        screenRenderer.clear();
-//        screenRenderer.clear(scene.backgroundColor);
+        screenRenderer.clear(scene.backgroundColor);
 
         for (Entity entity : scene.entities) {
             RenderOptions options = scene.renderOptions.getOrDefault(entity, DEFAULT_RENDER_OPTIONS);
@@ -52,7 +54,7 @@ public class Renderer {
 
             }
         }
-//        screenRenderer.present();
+        screenRenderer.present();
     }
 
     /**

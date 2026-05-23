@@ -5,8 +5,6 @@ import com.badlogic.gdx.graphics.Color;
 public class WireFrameRenderer {
 
 
-    private static final int[][] planes = {{2, 1}, {2, -1}, {0, 1}, {0, -1}, {1, 1}, {1, -1}};
-
     private final int[] clipResult = new int[2];
 
     private final ScreenRenderer screenRenderer;
@@ -63,11 +61,11 @@ public class WireFrameRenderer {
             int screenX2 = screenBuffer[(i * 2 + 1) * 2];
             int screenY2 = screenBuffer[(i * 2 + 1) * 2 + 1];
 
-            if (screenX1 < 0 || screenX1 >= Main.SCREEN_WIDTH ||
-                screenY1 < 0 || screenY1 >= Main.SCREEN_HEIGHT ||
-                screenX2 < 0 || screenX2 >= Main.SCREEN_WIDTH ||
-                screenY2 < 0 || screenY2 >= Main.SCREEN_HEIGHT)
-                throw new IllegalStateException("Screen coordinate out of bounds: (" + screenX1 + "," + screenY1 + "), (" + screenX2 + "," + screenY2 + ")");
+//            if (screenX1 < 0 || screenX1 >= Main.SCREEN_WIDTH ||
+//                screenY1 < 0 || screenY1 >= Main.SCREEN_HEIGHT ||
+//                screenX2 < 0 || screenX2 >= Main.SCREEN_WIDTH ||
+//                screenY2 < 0 || screenY2 >= Main.SCREEN_HEIGHT)
+//                throw new IllegalStateException("Screen coordinate out of bounds: (" + screenX1 + "," + screenY1 + "), (" + screenX2 + "," + screenY2 + ")");
 
             drawLine(screenX1, screenY1, screenX2, screenY2, color.r, color.g, color.b);
         }
@@ -100,7 +98,6 @@ public class WireFrameRenderer {
             int idx = visibleEdges[i];
             int a = edges[idx];
             int b = edges[idx + 1];
-//            boolean discard = false;
 
             int[] result = clipEdgeAllPlanes(a, b);
             if (result == null) continue;  // fully outside
@@ -113,14 +110,13 @@ public class WireFrameRenderer {
     }
 
     private int[] clipEdgeAllPlanes(int idx1, int idx2) {
-//        int[] result = {idx1, idx2};
         clipResult[0] = idx1;
         clipResult[1] = idx2;
 
         edgeDiscarded = false;
 
-        for (int i = 0; i < planes.length; i++) {
-            int[] plane = planes[i];
+        for (int i = 0; i < Renderer.CLIP_PLANES.length; i++) {
+            int[] plane = Renderer.CLIP_PLANES[i];
             SHClipEdge(clipResult[0], clipResult[1], plane[0], plane[1]);
             if (edgeDiscarded) return null;  // discarded
         }
@@ -202,13 +198,7 @@ public class WireFrameRenderer {
         int err = dx - dy;
 
         while (true) {
-//            try {
             screenRenderer.setPixel(x0, Main.SCREEN_HEIGHT - y0 - 1, (byte) (r * 255), (byte) (g * 255), (byte) (b * 255));
-//            }
-//            catch (Exception e) {
-////                System.out.println(e);
-//                System.out.println(x0+" "+(Main.SCREEN_HEIGHT - y0));
-//            }
             if (x0 == x1 && y0 == y1) break;
             int e2 = 2 * err;
             if (e2 > -dy) {
