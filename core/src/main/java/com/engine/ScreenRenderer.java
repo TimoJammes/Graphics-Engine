@@ -32,6 +32,13 @@ public class ScreenRenderer {
         buffer.put(idx + 3, (byte) 255);
     }
 
+    public void setPixel(int x, int y, Color color) {
+        byte r = (byte) (color.r * 255);
+        byte g = (byte) (color.g * 255);
+        byte b = (byte) (color.b * 255);
+        setPixel(x, y, r, g, b);
+    }
+
     public void clear(byte r, byte g, byte b) {
         for (int i = 0; i < width * height * 4; i += 4) {
             buffer.put(i,     (byte) r);
