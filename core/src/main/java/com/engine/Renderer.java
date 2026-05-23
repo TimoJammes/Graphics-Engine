@@ -1,7 +1,6 @@
 package com.engine;
 
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
-import com.badlogic.gdx.utils.ScreenUtils;
 
 
 public class Renderer {
@@ -18,14 +17,14 @@ public class Renderer {
     static final int[][] CLIP_PLANES = {{2, 1}, {2, -1}, {0, 1}, {0, -1}, {1, 1}, {1, -1}};
 
     private final ShapeRenderer shapeRenderer;
-    private final ScreenRenderer screenRenderer = new ScreenRenderer(Main.SCREEN_WIDTH, Main.SCREEN_HEIGHT);
-    private final WireFrameRenderer wireFrameRenderer = new WireFrameRenderer(screenRenderer);
+    private final FrameBuffer frameBuffer = new FrameBuffer(Main.SCREEN_WIDTH, Main.SCREEN_HEIGHT);
+    private final WireFrameRenderer wireFrameRenderer = new WireFrameRenderer(frameBuffer);
     private final SolidRenderer solidRenderer;// = new SolidRenderer(screenRenderer);
 
 
     Renderer(ShapeRenderer shapeRenderer) {
         this.shapeRenderer = shapeRenderer;
-        solidRenderer = new SolidRenderer(screenRenderer);
+        solidRenderer = new SolidRenderer(frameBuffer);
     }
 
     void renderScene(Scene scene, Camera camera) {
@@ -37,7 +36,7 @@ public class Renderer {
 
 //        ScreenUtils.clear(scene.backgroundColor);
 //        screenRenderer.clear();
-        screenRenderer.clear(scene.backgroundColor);
+        frameBuffer.clear(scene.backgroundColor);
 
         for (Entity entity : scene.entities) {
             RenderOptions options = scene.renderOptions.getOrDefault(entity, DEFAULT_RENDER_OPTIONS);
@@ -54,7 +53,7 @@ public class Renderer {
 
             }
         }
-        screenRenderer.present();
+        frameBuffer.present();
     }
 
     /**
