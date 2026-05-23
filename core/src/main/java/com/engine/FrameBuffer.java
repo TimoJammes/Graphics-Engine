@@ -6,30 +6,41 @@ import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 
-public class ScreenRenderer {
+public class FrameBuffer {
     private final Pixmap pixmap;
     private final Texture texture;
     private final SpriteBatch batch;
-    private final ByteBuffer buffer;
+    private final ByteBuffer colorBuffer;
     private final int width, height;
+    private final float[] depthBuffer;
 
-    public ScreenRenderer(int width, int height) {
+    public FrameBuffer(int width, int height) {
         this.width = width;
         this.height = height;
         pixmap = new Pixmap(width, height, Pixmap.Format.RGBA8888);
         texture = new Texture(pixmap);
         batch = new SpriteBatch();
-        buffer = pixmap.getPixels();
+        colorBuffer = pixmap.getPixels();
+        depthBuffer = new float[width * height];
+    }
+
+    float getDepth(int x, int y) {
+        return depthBuffer[y * width + x];
+    }
+
+    void setDepth(int x, int y, float depth) {
+        depthBuffer[y * width + x] = depth;
     }
 
     public void setPixel(int x, int y, byte r, byte g, byte b) {
         if (x < 0 || x >= width || y < 0 || y >= height) return;
         int idx = (y * width + x) * 4;
-        buffer.put(idx,     r);
-        buffer.put(idx + 1, g);
-        buffer.put(idx + 2, b);
-        buffer.put(idx + 3, (byte) 255);
+        colorBuffer.put(idx,     r);
+        colorBuffer.put(idx + 1, g);
+        colorBuffer.put(idx + 2, b);
+        colorBuffer.put(idx + 3, (byte) 255);
     }
 
     public void setPixel(int x, int y, Color color) {
@@ -41,11 +52,12 @@ public class ScreenRenderer {
 
     public void clear(byte r, byte g, byte b) {
         for (int i = 0; i < width * height * 4; i += 4) {
-            buffer.put(i,     (byte) r);
-            buffer.put(i + 1, (byte) g);
-            buffer.put(i + 2, (byte) b);
-            buffer.put(i + 3, (byte) 255);
+            colorBuffer.put(i,     (byte) r);
+            colorBuffer.put(i + 1, (byte) g);
+            colorBuffer.put(i + 2, (byte) b);
+            colorBuffer.put(i + 3, (byte) 255);
         }
+        Arrays.fill(depthBuffer, 0);
     }
 
     public void clear(Color color) {

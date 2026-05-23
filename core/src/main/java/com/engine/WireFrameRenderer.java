@@ -7,7 +7,7 @@ public class WireFrameRenderer {
 
     private final int[] clipResult = new int[2];
 
-    private final ScreenRenderer screenRenderer;
+    private final FrameBuffer frameBuffer;
 
     private int currentMaxVertices = 0;
     private float[] clipBuffer;
@@ -20,8 +20,8 @@ public class WireFrameRenderer {
 
     private boolean edgeDiscarded;
 
-    WireFrameRenderer(ScreenRenderer screenRenderer) {
-        this.screenRenderer = screenRenderer;
+    WireFrameRenderer(FrameBuffer frameBuffer) {
+        this.frameBuffer = frameBuffer;
     }
 
     private void ensureCapacityWF(int vertexCount) {
@@ -198,7 +198,7 @@ public class WireFrameRenderer {
         int err = dx - dy;
 
         while (true) {
-            screenRenderer.setPixel(x0, Main.SCREEN_HEIGHT - y0 - 1, (byte) (r * 255), (byte) (g * 255), (byte) (b * 255));
+            frameBuffer.setPixel(x0, Main.SCREEN_HEIGHT - y0 - 1, (byte) (r * 255), (byte) (g * 255), (byte) (b * 255));
             if (x0 == x1 && y0 == y1) break;
             int e2 = 2 * err;
             if (e2 > -dy) {
