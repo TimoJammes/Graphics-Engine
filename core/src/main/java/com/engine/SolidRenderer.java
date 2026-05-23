@@ -8,18 +8,16 @@ import java.util.Arrays;
 public class SolidRenderer {
 
 
-    private static final int[][] planes = {{2, 1}, {2, -1}, {0, 1}, {0, -1}, {1, 1}, {1, -1}};
-
     private final ScreenRenderer screenRenderer;
     private final ShapeRenderer shapeRenderer;
     /**
      * stores clip-space vertices
      */
-    private float[] clipVertexBuffer;// = new float[MAX_VERTICES * Renderer.clipStride];
+    private float[] clipBuffer;// = new float[MAX_VERTICES * Renderer.clipStride];
     /**
      * stores indices of non-culled triangles (each index points to the first index of a triangle in indices)
      */
-    private int[] triangleOrder;// = new int[MAX_TRIANGLES];
+    private int[] triangleBuffer;// = new int[MAX_TRIANGLES];
     /**
      * stores clip-space triangle average z (used to sort positions)
      */
@@ -27,21 +25,21 @@ public class SolidRenderer {
     /**
      * stores ordered indices of triangleOrder based on avgZBuffer value of the triangles
      */
-    Integer[] positions;// = new Integer[MAX_TRIANGLES];
+    Integer[] triangleOrderBuffer;// = new Integer[MAX_TRIANGLES];
     /**
      * stores the
      */
-    private int[] postClipIndices;// = new int[MAX_TRIANGLES * 2 * 3]; // * 2 for clipping, * 3 for 3 vertex indices
-    private int[] screenVerticesBuffer;// = new float[MAX_TRIANGLES * 2 * 2 * 3]; //*2 for possible extra triangle from SH clipping, *2 for x and y, *3 for 3 vertices per triangle
+    private int[] postClipTriangleIndicesBuffer;// = new int[MAX_TRIANGLES * 2 * 3]; // * 2 for clipping, * 3 for 3 vertex indices
+    private int[] screenBuffer;// = new float[MAX_TRIANGLES * 2 * 2 * 3]; //*2 for possible extra triangle from SH clipping, *2 for x and y, *3 for 3 vertices per triangle
 
     private int currentMaxVertices = 0;
 
     private int totalVertices;
 
-    //    private final int[] clipResult = new int[4];
-//    private boolean triangleDiscarded;
     int[] polyIn = new int[9];
     int[] polyOut = new int[9];
+
+    private final Color scratchColor = new Color();
 
     SolidRenderer(ScreenRenderer screenRenderer) {
         this.screenRenderer = screenRenderer;
@@ -61,12 +59,12 @@ public class SolidRenderer {
     private void ensureCapacity(int vertexCount) {
         if (vertexCount <= currentMaxVertices) return;
         currentMaxVertices = vertexCount;
-        clipVertexBuffer = new float[currentMaxVertices * 5 * Renderer.CLIP_STRIDE];
-        triangleOrder = new int[currentMaxVertices * 2];
+        clipBuffer = new float[currentMaxVertices * 5 * Renderer.CLIP_STRIDE];
+        triangleBuffer = new int[currentMaxVertices * 2];
         avgZBuffer = new float[currentMaxVertices * 2];
-        positions = new Integer[currentMaxVertices * 2];
-        postClipIndices = new int[currentMaxVertices * 4 * 3];
-        screenVerticesBuffer = new int[currentMaxVertices * 4 * 3 * 2];
+        triangleOrderBuffer = new Integer[currentMaxVertices * 2];
+        postClipTriangleIndicesBuffer = new int[currentMaxVertices * 4 * 3];
+        screenBuffer = new int[currentMaxVertices * 4 * 3 * 2];
     }
 
     void render(Entity entity, float[][] VP, RenderOptions options) {
@@ -80,49 +78,52 @@ public class SolidRenderer {
 
         totalVertices = vertices.length / Renderer.VERTEX_STRIDE;
 
-        Renderer.computeClipVertices(vertices, MVP, clipVertexBuffer);
-        int triangleCount = cullOutsideTriangles(indices, clipVertexBuffer, triangleOrder);
-        zSortTriangles(triangleCount, indices, positions);
-        int postClipTriangleCount = SHClipTriangles(triangleCount, indices, postClipIndices);
+        Renderer.computeClipVertices(vertices, MVP, clipBuffer);
+        int triangleCount = cullOutsideTriangles(indices, clipBuffer, triangleBuffer);
+        zSortTriangles(triangleCount, indices, triangleOrderBuffer);
+        int postClipTriangleCount = SHClipTriangles(triangleCount, indices, postClipTriangleIndicesBuffer);
 
         //check clipping worked (all clip vertices in frustum)
-//        for (int i =0; i < postClipTriangleCount; i++) {
-//            int idx = postClipIndices[i];
-//
-//            float x = clipVertexBuffer[idx * Renderer.CLIP_STRIDE];
-//            float y = clipVertexBuffer[idx * Renderer.CLIP_STRIDE + 1];
-//            float z = clipVertexBuffer[idx * Renderer.CLIP_STRIDE + 2];
-//            float w = clipVertexBuffer[idx * Renderer.CLIP_STRIDE + 3];
-//
-//            assert x >= -w - 1e-4f && x <= w + 1e-4f : "x outside frustum: x=" + x + " w=" + w + " idx=" + idx;
-//            assert y >= -w - 1e-4f && y <= w + 1e-4f : "y outside frustum: y=" + y + " w=" + w + " idx=" + idx;
-//            assert z >= -w - 1e-4f && z <= w + 1e-4f : "z outside frustum: z=" + z + " w=" + w + " idx=" + idx;
-//        }
+        for (int i = 0; i < postClipTriangleCount * 3; i++) {
+            int idx = postClipTriangleIndicesBuffer[i];
 
-        computeScreenVertices(postClipTriangleCount, screenVerticesBuffer);
+            float x = clipBuffer[idx * Renderer.CLIP_STRIDE];
+            float y = clipBuffer[idx * Renderer.CLIP_STRIDE + 1];
+            float z = clipBuffer[idx * Renderer.CLIP_STRIDE + 2];
+            float w = clipBuffer[idx * Renderer.CLIP_STRIDE + 3];
 
-        if (!options.showWireFrame) shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+            assert x >= -w - 1e-4f && x <= w + 1e-4f : "x outside frustum: x=" + x + " w=" + w + " idx=" + idx;
+            assert y >= -w - 1e-4f && y <= w + 1e-4f : "y outside frustum: y=" + y + " w=" + w + " idx=" + idx;
+            assert z >= -w - 1e-4f && z <= w + 1e-4f : "z outside frustum: z=" + z + " w=" + w + " idx=" + idx;
+        }
+
+        computeScreenVertices(postClipTriangleCount, screenBuffer);
+
+//        if (!options.showWireFrame) shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
         displayTriangles(options, entity.color, postClipTriangleCount);
-        if (!options.showWireFrame) shapeRenderer.end();
+//        if (!options.showWireFrame) shapeRenderer.end();
     }
 
-    private void displayTriangles(RenderOptions options, Color color, int postClipTriangleCount) {
+    private void displayTriangles(RenderOptions options, Color baseColor, int postClipTriangleCount) {
         for (int i = 0; i < postClipTriangleCount; i++) {
 
-            float screenX1 = screenVerticesBuffer[i * 3 * 2];
-            float screenY1 = screenVerticesBuffer[i * 3 * 2 + 1];
-            float screenX2 = screenVerticesBuffer[(i * 3 + 1) * 2];
-            float screenY2 = screenVerticesBuffer[(i * 3 + 1) * 2 + 1];
-            float screenX3 = screenVerticesBuffer[(i * 3 + 2) * 2];
-            float screenY3 = screenVerticesBuffer[(i * 3 + 2) * 2 + 1];
+            int screenX1 = screenBuffer[i * 3 * 2];
+            int screenY1 = screenBuffer[i * 3 * 2 + 1];
+            int screenX2 = screenBuffer[(i * 3 + 1) * 2];
+            int screenY2 = screenBuffer[(i * 3 + 1) * 2 + 1];
+            int screenX3 = screenBuffer[(i * 3 + 2) * 2];
+            int screenY3 = screenBuffer[(i * 3 + 2) * 2 + 1];
 
-            setRenderColor(options, color, i * 3, i * 3 + 1, i * 3 + 2); //pass indices[index] for randomizeTexture
-
-//            rasterizeTriangle(options, screenX1, screenY1, screenX2, screenY2, screenX3, screenY3);
-//            if (!(screenX1 >= 0 && screenX1 <= Main.SCREEN_WIDTH && screenY1 >= 0 && screenY1 <= Main.SCREEN_HEIGHT && screenX2 >= 0 && screenX2 <= Main.SCREEN_WIDTH && screenY2 >= 0 && screenY2 <= Main.SCREEN_HEIGHT && screenX3 >= 0 && screenX3 <= Main.SCREEN_WIDTH && screenY3 >= 0 && screenY3 <= Main.SCREEN_HEIGHT)) {
-//                assert false;
-//            }
-            drawTriangle(options, screenX1, screenY1, screenX2, screenY2, screenX3, screenY3);
+//            setRenderColor(options, color, i * 3, i * 3 + 1, i * 3 + 2); //pass indices[index] for randomizeTexture
+            Color color = getRenderColor(options, baseColor, i * 3, i * 3 + 1, i * 3 + 2);
+            rasterizeTriangle(options, color, screenX1, screenY1, screenX2, screenY2, screenX3, screenY3);
+            assert (screenX1 >= 0 && screenX1 <= Main.SCREEN_WIDTH &&
+                screenY1 >= 0 && screenY1 <= Main.SCREEN_HEIGHT &&
+                screenX2 >= 0 && screenX2 <= Main.SCREEN_WIDTH &&
+                screenY2 >= 0 && screenY2 <= Main.SCREEN_HEIGHT &&
+                screenX3 >= 0 && screenX3 <= Main.SCREEN_WIDTH &&
+                screenY3 >= 0 && screenY3 <= Main.SCREEN_HEIGHT): "illegal screen pos";
+//            drawTriangle(options, screenX1, screenY1, screenX2, screenY2, screenX3, screenY3);
         }
     }
 
@@ -130,11 +131,11 @@ public class SolidRenderer {
         for (int i = 0; i < postClipTriangleCount; i++) {
 
             for (int j = 0; j < 3; j++) {
-                int idx = postClipIndices[i * 3 + j];
+                int idx = postClipTriangleIndicesBuffer[i * 3 + j];
 
-                final float w = clipVertexBuffer[idx * Renderer.CLIP_STRIDE + 3];
-                final float ndcX = Math.clamp(clipVertexBuffer[idx * Renderer.CLIP_STRIDE] / w, -1, 1);
-                final float ndcY = Math.clamp(clipVertexBuffer[idx * Renderer.CLIP_STRIDE + 1] / w, -1, 1);
+                final float w = clipBuffer[idx * Renderer.CLIP_STRIDE + 3];
+                final float ndcX = Math.clamp(clipBuffer[idx * Renderer.CLIP_STRIDE] / w, -1, 1);
+                final float ndcY = Math.clamp(clipBuffer[idx * Renderer.CLIP_STRIDE + 1] / w, -1, 1);
 
                 //TODO -1 for screenRenderer (buffer writing)
                 final float screenX = (ndcX + 1) / 2 * (Main.SCREEN_WIDTH - 0);
@@ -150,7 +151,7 @@ public class SolidRenderer {
         int postClipTriangleCount = 0;
 
         for (int i = 0; i < triangleCount; i++) {
-            int idx = triangleOrder[positions[i]];
+            int idx = triangleBuffer[triangleOrderBuffer[i]];
             int a = indices[idx];
             int b = indices[idx + 1];
             int c = indices[idx + 2];
@@ -161,7 +162,7 @@ public class SolidRenderer {
             for (int j = 1; j < polyVertexCount - 1; j++) {
                 out[postClipTriangleCount * 3] = polyIn[0];
                 out[postClipTriangleCount * 3 + 1] = polyIn[j];
-                out[postClipTriangleCount * 3 + 2] = polyIn[j+1];
+                out[postClipTriangleCount * 3 + 2] = polyIn[j + 1];
                 postClipTriangleCount++;
 
             }
@@ -176,9 +177,9 @@ public class SolidRenderer {
         polyIn[2] = idx3;
         int inCount = 3;
 
-        for (int i = 0; i < planes.length; i++) {
+        for (int i = 0; i < Renderer.CLIP_PLANES.length; i++) {
 
-            int[] plane = planes[i];
+            int[] plane = Renderer.CLIP_PLANES[i];
             int outCount = SHClipPoly(polyIn, inCount, plane[0], plane[1], polyOut);
 
             if (outCount == 0) return 0;  // discarded
@@ -187,8 +188,6 @@ public class SolidRenderer {
             polyIn = polyOut;
             polyOut = tmp;
             inCount = outCount;
-
-//            SHClipTriangle(clipResult[0], clipResult[1], clipResult[2], plane[0], plane[1]);
         }
 
         return inCount;
@@ -201,10 +200,10 @@ public class SolidRenderer {
             int edgeIdx1 = polyIn[i];
             int edgeIdx2 = polyIn[(i + 1) % inCount];
 
-            float v1 = clipVertexBuffer[edgeIdx1 * Renderer.CLIP_STRIDE + component];
-            float v2 = clipVertexBuffer[edgeIdx2 * Renderer.CLIP_STRIDE + component];
-            float w1 = clipVertexBuffer[edgeIdx1 * Renderer.CLIP_STRIDE + 3];
-            float w2 = clipVertexBuffer[edgeIdx2 * Renderer.CLIP_STRIDE + 3];
+            float v1 = clipBuffer[edgeIdx1 * Renderer.CLIP_STRIDE + component];
+            float v2 = clipBuffer[edgeIdx2 * Renderer.CLIP_STRIDE + component];
+            float w1 = clipBuffer[edgeIdx1 * Renderer.CLIP_STRIDE + 3];
+            float w2 = clipBuffer[edgeIdx2 * Renderer.CLIP_STRIDE + 3];
 
             boolean v1Outside = sign * v1 < -w1;
             boolean v2Outside = sign * v2 < -w2;
@@ -222,15 +221,15 @@ public class SolidRenderer {
                 int i1 = edgeIdx1 * Renderer.CLIP_STRIDE;
                 int i2 = edgeIdx2 * Renderer.CLIP_STRIDE;
 
-                float d1 = clipVertexBuffer[i1 + 3] + sign * clipVertexBuffer[i1 + component];
-                float d2 = clipVertexBuffer[i2 + 3] + sign * clipVertexBuffer[i2 + component];
+                float d1 = clipBuffer[i1 + 3] + sign * clipBuffer[i1 + component];
+                float d2 = clipBuffer[i2 + 3] + sign * clipBuffer[i2 + component];
 
                 float t1 = d1 / (d1 - d2);
 
-                clipVertexBuffer[totalVertices * Renderer.CLIP_STRIDE] = clipVertexBuffer[i1] + t1 * (clipVertexBuffer[i2] - clipVertexBuffer[i1]);
-                clipVertexBuffer[totalVertices * Renderer.CLIP_STRIDE + 1] = clipVertexBuffer[i1 + 1] + t1 * (clipVertexBuffer[i2 + 1] - clipVertexBuffer[i1 + 1]);
-                clipVertexBuffer[totalVertices * Renderer.CLIP_STRIDE + 2] = clipVertexBuffer[i1 + 2] + t1 * (clipVertexBuffer[i2 + 2] - clipVertexBuffer[i1 + 2]);
-                clipVertexBuffer[totalVertices * Renderer.CLIP_STRIDE + 3] = clipVertexBuffer[i1 + 3] + t1 * (clipVertexBuffer[i2 + 3] - clipVertexBuffer[i1 + 3]);
+                clipBuffer[totalVertices * Renderer.CLIP_STRIDE] = clipBuffer[i1] + t1 * (clipBuffer[i2] - clipBuffer[i1]);
+                clipBuffer[totalVertices * Renderer.CLIP_STRIDE + 1] = clipBuffer[i1 + 1] + t1 * (clipBuffer[i2 + 1] - clipBuffer[i1 + 1]);
+                clipBuffer[totalVertices * Renderer.CLIP_STRIDE + 2] = clipBuffer[i1 + 2] + t1 * (clipBuffer[i2 + 2] - clipBuffer[i1 + 2]);
+                clipBuffer[totalVertices * Renderer.CLIP_STRIDE + 3] = clipBuffer[i1 + 3] + t1 * (clipBuffer[i2 + 3] - clipBuffer[i1 + 3]);
 
                 if (firstInside) {
                     polyOut[outCount++] = totalVertices;
@@ -248,49 +247,115 @@ public class SolidRenderer {
     }
 
     private void zSortTriangles(int triangleCount, int[] indices, Integer[] out) {
-        computeAvgClipZ(triangleCount, triangleOrder, indices, clipVertexBuffer, avgZBuffer);
+        computeAvgClipZ(triangleCount, triangleBuffer, indices, clipBuffer, avgZBuffer);
 
         for (int i = 0; i < triangleCount; i++) out[i] = i; //to sort triangles by avg z values
 
         Arrays.sort(out, 0, triangleCount, (a, b) -> Float.compare(avgZBuffer[a], avgZBuffer[b]));
     }
 
-    private void rasterizeTriangle(RenderOptions options, float v1X, float v1Y, float v2X, float v2Y, float v3X, float v3Y) {
+    private void rasterizeTriangle(RenderOptions options, Color color, int v1X, int v1Y, int v2X, int v2Y, int v3X, int v3Y) {
 
+        //a top, b middle, c bottom vertex
+        int aX = v1X, aY = v1Y;
+        int bX = v2X, bY = v2Y;
+        int cX = v3X, cY = v3Y;
+        int tX, tY;
+
+        if (aY > bY) {
+            tX = aX;
+            tY = aY;
+            aX = bX;
+            aY = bY;
+            bX = tX;
+            bY = tY;
+        }
+        if (aY > cY) {
+            tX = aX;
+            tY = aY;
+            aX = cX;
+            aY = cY;
+            cX = tX;
+            cY = tY;
+        }
+        if (bY > cY) {
+            tX = bX;
+            tY = bY;
+            bX = cX;
+            bY = cY;
+            cX = tX;
+            cY = tY;
+        }
+
+        if (cY == aY) return;
+
+        float t = (float) (bY - aY) / (cY - aY);
+        //interpolated x value for triangle separation between top and bottom
+        int midX = (int) (aX + t * (cX - aX));
+
+
+        /* here we know that aY <= bY <= cY */
+        /* check for trivial case of bottom-flat triangle */
+        if (bY == cY) {
+            fillBottomFlatTriangle(color, aX, aY, bX, bY, cX, cY);
+        }
+        /* check for trivial case of top-flat triangle */
+        else if (aY == bY) {
+            fillTopFlatTriangle(color, aX, aY, bX, bY, cX, cY);
+        } else {
+            /* general case - split the triangle in a topflat and bottom-flat one */
+            fillBottomFlatTriangle(color, aX, aY, bX, bY, midX, bY);
+            fillTopFlatTriangle(color, bX, bY, midX, bY, cX, cY);
+        }
     }
 
-    private void setRenderColor(RenderOptions options, Color color, int idx1, int idx2, int idx3) {
+    private void fillBottomFlatTriangle(Color color, int v1X, int v1Y, int v2X, int v2Y, int v3X, int v3Y) {
+        float invslope1 = (float) (v2X - v1X) / (v2Y - v1Y);
+        float invslope2 = (float) (v3X - v1X) / (v3Y - v1Y);
+
+        float curx1 = v1X;
+        float curx2 = v1X;
+
+        for (int scanlineY = v1Y; scanlineY <= v2Y; scanlineY++) {
+            drawHorizLine(color, (int) curx1, (int) curx2, scanlineY);
+            curx1 += invslope1;
+            curx2 += invslope2;
+        }
+    }
+
+    private void fillTopFlatTriangle(Color color, int v1X, int v1Y, int v2X, int v2Y, int v3X, int v3Y) {
+        float invslope1 = (float) (v3X - v1X) / (v3Y - v1Y);
+        float invslope2 = (float) (v3X - v2X) / (v3Y - v2Y);
+
+        float curx1 = v3X;
+        float curx2 = v3X;
+
+        for (int scanlineY = v3Y; scanlineY > v1Y; scanlineY--) {
+            drawHorizLine(color, (int) curx1, (int) curx2, scanlineY);
+            curx1 -= invslope1;
+            curx2 -= invslope2;
+        }
+    }
+
+    private void drawHorizLine(Color color, int x1, int x2, int y) {
+        int xStart = Math.min(x1, x2);
+        int xEnd = Math.max(x1, x2);
+        for (int x = xStart; x <= xEnd; x++) {
+            screenRenderer.setPixel(x, Main.SCREEN_HEIGHT - y - 1, color);
+        }
+    }
+
+    private Color getRenderColor(RenderOptions options, Color color, int idx1, int idx2, int idx3) {
         if (!options.randomizeTexture) {
-            shapeRenderer.setColor(color);
-            return;
+            return color;
         }
 
         // deterministic pseudo-random hash from all 3 vertex indices
         int hash = (idx1 * 92837111) ^ (idx2 * 689287499) ^ (idx3 * 283823481);
         float offset = ((hash & 0xFF) / 255f - 0.5f) * 0.12f; // range [-0.06, 0.06]
 
-        shapeRenderer.setColor(Math.clamp(color.r + offset, 0, 1), Math.clamp(color.g + offset, 0, 1), Math.clamp(color.b + offset, 0, 1), 1f);
-    }
-
-    /**
-     * draws triangle connecting v1, v2, v3.
-     */
-    private void drawTriangle(RenderOptions options, float v1X, float v1Y, float v2X, float v2Y, float v3X, float v3Y) {
-
-        if (options.showWireFrame) shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-
-        shapeRenderer.triangle(v1X, v1Y, v2X, v2Y, v3X, v3Y);
-
-        if (options.showWireFrame) {
-            shapeRenderer.end();
-
-            shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
-            shapeRenderer.setColor(Color.BLACK);
-            shapeRenderer.line(v1X, v1Y, v2X, v2Y);
-            shapeRenderer.line(v1X, v1Y, v3X, v3Y);
-            shapeRenderer.line(v2X, v2Y, v3X, v3Y);
-            shapeRenderer.end();
-        }
+        scratchColor.set(Math.clamp(color.r + offset, 0, 1), Math.clamp(color.g + offset, 0, 1), Math.clamp(color.b + offset, 0, 1), 255f);
+        return scratchColor;
     }
 
     /**
@@ -354,7 +419,7 @@ public class SolidRenderer {
         return triangleCount;
     }
 
-    final float avgZ(int index, int[] indices, float[] clipVertices) {
+    private final float avgZ(int index, int[] indices, float[] clipVertices) {
         float z1, z2, z3;
 
         z1 = -clipVertices[indices[index] * Renderer.CLIP_STRIDE + 3];
