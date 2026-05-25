@@ -6,6 +6,8 @@ public class Quaternion{
     float y;
     float z;
 
+    float[][] matrix = new float[3][3];
+
      Quaternion(float w, float x, float y, float z) {
         this.w = w;
         this.x = x;
@@ -17,22 +19,26 @@ public class Quaternion{
         this(1, 0, 0, 0);
     }
 
+    /**
+     * stores to matrix variable
+     * @return rotation matrix
+     */
      float[][] toMatrix() {
-        float[][] m = new float[3][3];
+//        float[][] m = new float[3][3];
 
-        m[0][0] = 1 - 2*(y*y + z*z);
-        m[0][1] = 2*(x*y - w*z);
-        m[0][2] = 2*(x*z + w*y);
+        matrix[0][0] = 1 - 2*(y*y + z*z);
+        matrix[0][1] = 2*(x*y - w*z);
+        matrix[0][2] = 2*(x*z + w*y);
 
-        m[1][0] = 2*(x*y + w*z);
-        m[1][1] = 1 - 2*(x*x + z*z);
-        m[1][2] = 2*(y*z - w*x);
+        matrix[1][0] = 2*(x*y + w*z);
+        matrix[1][1] = 1 - 2*(x*x + z*z);
+        matrix[1][2] = 2*(y*z - w*x);
 
-        m[2][0] = 2*(x*z - w*y);
-        m[2][1] = 2*(y*z + w*x);
-        m[2][2] = 1 - 2*(x*x + y*y);
+        matrix[2][0] = 2*(x*z - w*y);
+        matrix[2][1] = 2*(y*z + w*x);
+        matrix[2][2] = 1 - 2*(x*x + y*y);
 
-        return m;
+        return matrix;
     }
 
     void rotateLocal(double theta, float ax, float ay, float az) {

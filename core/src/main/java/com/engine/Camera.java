@@ -9,6 +9,8 @@ public class Camera implements Movable {
 
 
     public static final int TUNED_FPS = 144;
+    private final float moveSpeed = .02f;
+//    private final float moveSpeed = .5f;
     protected final Transform transform;
 
 //    private final int fovDeg;
@@ -35,7 +37,7 @@ public class Camera implements Movable {
 
     boolean update(float dt) {
         double theta = Math.PI / 256 * dt * TUNED_FPS;
-        float mag = .02f * dt * TUNED_FPS;
+        float mag = moveSpeed * dt * TUNED_FPS;
 
         float dx = 0, dy = 0, dz = 0;
         float rotX = 0, rotY = 0;
