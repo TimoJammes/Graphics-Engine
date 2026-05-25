@@ -4,6 +4,28 @@ public final class Matrix {
 
     private Matrix() {}
 
+    static float[] mul(float[] m, float x) {
+        float[] res = new float[m.length];
+
+        for(int i = 0; i < m.length; i++) {
+            res[i] = m[i] * x;
+        }
+        return res;
+    }
+
+    static float[] cross(float[] a, float[] b) {
+        return new float[]{
+            a[1]*b[2] - a[2]*b[1],
+            a[2]*b[0] - a[0]*b[2],
+            a[0]*b[1] - a[1]*b[0]
+        };
+    }
+
+    static float[] normalize(float[] v) {
+        float len = (float)Math.sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+        return new float[]{v[0]/len, v[1]/len, v[2]/len};
+    }
+
     static float[][] add(float[][] m1, float[][] m2) {
         float[][] res = new float[m1.length][m1[0].length];
         for (int i = 0; i < m1.length; i++) {
