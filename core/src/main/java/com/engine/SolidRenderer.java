@@ -215,11 +215,13 @@ public class SolidRenderer {
             float vx = currCam.transform.position[0] - baryX;
             float vy = currCam.transform.position[1] - baryY;
             float vz = currCam.transform.position[2] - baryZ;
-            float vLen = (float)Math.sqrt(vx*vx + vy*vy + vz*vz);
-            vx /= vLen; vy /= vLen; vz /= vLen;
+            float vLen = (float) Math.sqrt(vx * vx + vy * vy + vz * vz);
+            vx /= vLen;
+            vy /= vLen;
+            vz /= vLen;
 
-            float specDot = vx*rx + vy*ry + vz*rz;
-            float specular = (float)Math.pow(Math.max(specDot, 0f), 32);
+            float specDot = vx * rx + vy * ry + vz * rz;
+            float specular = (float) Math.pow(Math.max(specDot, 0f), 32);
 
 
             triangleLightBuffer[i * LIGHT_BUFFER_STRIDE] = diffuse;
@@ -646,6 +648,21 @@ public class SolidRenderer {
                 (y1 < -w1 && y2 < -w2 && y3 < -w3);    // all below bottom plane
 
             if (cull) continue;
+
+            // compute face normal from two edges
+            float e1x = x2 - x1, e1y = y2 - y1, e1z = z2 - z1;
+            float e2x = x3 - x1, e2y = y3 - y1, e2z = z3 - z1;
+
+            // cross product → face normal
+            float fnx = e1y * e2z - e1z * e2y;
+            float fny = e1z * e2x - e1x * e2z;
+            float fnz = e1x * e2y - e1y * e2x;
+
+            // dot with view direction
+            float vx = -x1, vy = -y1, vz = -z1;
+            float dot = fnx * vx + fny * vy + fnz * vz;
+
+            if (dot >= 0) continue; //backface cull
 
             out[triangleCount++] = i;  // only add visible triangles
         }
