@@ -3,20 +3,38 @@ package com.engine;
 import java.util.*;
 
 public class Mesh {
-     final float[] vertices;
-     final int[] indices;
-     final int[] edges;
-//     final int stride;
+    final float[] vertices;
+    final int[] indices;
+    final int[] edges;
+    final int stride;
 
-    public Mesh(float[] vertices, int[] indices) {
+    private Mesh(float[] vertices, int[] indices, int stride) {
         this.vertices = vertices;
         this.indices = indices;
-//        this.stride = stride;
-        this.edges = getDeduplicatedEdges(indices);
+        this.stride = stride;
 
-//        System.out.println("Vertices: " + vertices.length);
-//        System.out.println("Indices: " + edges.length);
-//        System.out.println("Edges: " + edges.length);
+        this.edges = getDeduplicatedEdges(indices);
+    }
+
+    public Mesh(float[] vertices, int[] indices) {
+        this(vertices, indices, 3);
+    }
+
+    public Mesh(float[] vertices, float[] normals, int[] indices) {
+        assert vertices.length == normals.length: "attempted to create mesh with incorrect # of normals";
+
+        float[] mergedVerticesNormals = new float[vertices.length * 2];
+
+        for (int i = 0; i < vertices.length / 3; i++) {
+            mergedVerticesNormals[i * 6] = vertices[i * 3];
+            mergedVerticesNormals[i * 6 + 1] = vertices[i * 3 + 1];
+            mergedVerticesNormals[i * 6 + 2] = vertices[i * 3 + 2];
+            mergedVerticesNormals[i * 6 + 3] = normals[i * 3];
+            mergedVerticesNormals[i * 6 + 4] = normals[i * 3 + 1];
+            mergedVerticesNormals[i * 6 + 5] = normals[i * 3 + 2];
+        }
+
+        this(mergedVerticesNormals, indices, 6);
     }
 
     static int[] getDeduplicatedEdges(int[] indices) {
@@ -25,7 +43,7 @@ public class Mesh {
         List<Integer> edgeList = new ArrayList<>();
 
         for (int i = 0; i < indices.length; i += 3) {
-            int a = indices[i], b = indices[i+1], c = indices[i+2];
+            int a = indices[i], b = indices[i + 1], c = indices[i + 2];
             addIfNew(seenEdges, edgeList, a, b);
             addIfNew(seenEdges, edgeList, b, c);
             addIfNew(seenEdges, edgeList, a, c);
