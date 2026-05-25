@@ -182,6 +182,7 @@ class GroundEntity extends Entity {
 
         super(mesh, color);
         hasNormals = true;
+        mesh.isClosed = false;
 
     }
 }

@@ -8,6 +8,8 @@ public class Mesh {
     final int[] edges;
     final int stride;
 
+    boolean isClosed = true;
+
     private Mesh(float[] vertices, int[] indices, int stride) {
         this.vertices = vertices;
         this.indices = indices;
