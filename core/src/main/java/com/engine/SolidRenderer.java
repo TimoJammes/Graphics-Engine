@@ -104,7 +104,7 @@ public class SolidRenderer {
 
 //        Renderer.computeLocalToClipVertices(vertices, MVP, clipBuffer, vertexStride);
 
-        int triangleCount = cullOutsideTriangles(indices, clipBuffer, triangleBuffer);
+        int triangleCount = cullOutsideTriangles(indices, clipBuffer, triangleBuffer, entity.mesh.isClosed);
 
         if (entity.hasNormals && currentScene.light != null)
             computeFlatLighting(triangleCount, indices, triangleLightBuffer);
@@ -617,7 +617,7 @@ public class SolidRenderer {
      * @param out          array to store triangle indices to (index in indices of first index of vertex of each triangle)
      * @return number of triangles after cull (# indices stored in triangleOrder)
      */
-    private int cullOutsideTriangles(int[] indices, float[] clipVertices, int[] out) {
+    private int cullOutsideTriangles(int[] indices, float[] clipVertices, int[] out, boolean closedMesh) {
         int triangleCount = 0;
         for (int i = 0; i < indices.length; i += 3) {
             int idx1 = indices[i];
@@ -649,20 +649,23 @@ public class SolidRenderer {
 
             if (cull) continue;
 
-            // compute face normal from two edges
-            float e1x = x2 - x1, e1y = y2 - y1, e1z = z2 - z1;
-            float e2x = x3 - x1, e2y = y3 - y1, e2z = z3 - z1;
+            if (closedMesh) {
+                // compute face normal from two edges
+                float e1x = x2 - x1, e1y = y2 - y1, e1z = z2 - z1;
+                float e2x = x3 - x1, e2y = y3 - y1, e2z = z3 - z1;
 
-            // cross product → face normal
-            float fnx = e1y * e2z - e1z * e2y;
-            float fny = e1z * e2x - e1x * e2z;
-            float fnz = e1x * e2y - e1y * e2x;
+                // cross product → face normal
+                float fnx = e1y * e2z - e1z * e2y;
+                float fny = e1z * e2x - e1x * e2z;
+                float fnz = e1x * e2y - e1y * e2x;
 
-            // dot with view direction
-            float vx = -x1, vy = -y1, vz = -z1;
-            float dot = fnx * vx + fny * vy + fnz * vz;
+                // dot with view direction
+                float vx = -x1, vy = -y1, vz = -z1;
+                float dot = fnx * vx + fny * vy + fnz * vz;
 
-            if (dot >= 0) continue; //backface cull
+                if (dot >= 0) continue; //backface cull
+
+            }
 
             out[triangleCount++] = i;  // only add visible triangles
         }
