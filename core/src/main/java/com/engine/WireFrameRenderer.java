@@ -20,6 +20,8 @@ public class WireFrameRenderer {
 
     private boolean edgeDiscarded;
 
+    private int vertexStride;
+
     WireFrameRenderer(FrameBuffer frameBuffer) {
         this.frameBuffer = frameBuffer;
     }
@@ -33,18 +35,26 @@ public class WireFrameRenderer {
         screenBuffer = new int[currentMaxVertices * 3 * 2 * 2];
     }
 
+    void render(Scene scene, float[][] VP) {
+        for (Entity entity : scene.entities) {
+            render(entity, VP);
+        }
+    }
+
     void render(Entity entity, float[][] VP) {
 
-        ensureCapacityWF(entity.mesh.vertices.length / Renderer.VERTEX_STRIDE);
+        vertexStride = entity.mesh.stride;
+
+        ensureCapacityWF(entity.mesh.vertices.length / vertexStride);
 
         float[][] MVP = Matrix.matmul(VP, entity.transform.toMatrix());
 
         final float[] vertices = entity.mesh.vertices;
         final int[] edges = entity.mesh.edges;
 
-        totalVertices = vertices.length / Renderer.VERTEX_STRIDE;
+        totalVertices = vertices.length / vertexStride;
 
-        Renderer.computeClipVertices(vertices, MVP, clipBuffer);
+        Renderer.computeLocalToClipVertices(vertices, MVP, clipBuffer, vertexStride);
         int edgeCount = cullOutsideEdges(edges, clipBuffer, visibleEdges);
         int postClipEdgeCount = SHClipEdges(edgeCount, edges, postClipEdges);
         computeScreenVertices(postClipEdgeCount, screenBuffer);
