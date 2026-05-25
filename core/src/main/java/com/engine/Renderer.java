@@ -5,7 +5,6 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 
 public class Renderer {
 
-    private static final RenderOptions DEFAULT_RENDER_OPTIONS = new RenderOptions();
     static final float NEAR_PLANE_EPSILON = 0.01f;
 
     //    private static final int MAX_VERTICES = 1_000_000;
@@ -36,23 +35,20 @@ public class Renderer {
 
 //        ScreenUtils.clear(scene.backgroundColor);
 //        screenRenderer.clear();
+
         frameBuffer.clear(scene.backgroundColor);
 
-        for (Entity entity : scene.entities) {
-            RenderOptions options = scene.renderOptions.getOrDefault(entity, DEFAULT_RENDER_OPTIONS);
-
-            switch (options.renderMode) {
-                case Scene.RenderMode.WIRE_FRAME:
-                    wireFrameRenderer.render(entity, VP);
-                    break;
-                case Scene.RenderMode.SOLID:
-                    solidRenderer.render(entity, VP, options);
-                    break;
-                default:
-                    throw new IllegalStateException("Unsupported render mode");
-
-            }
+        switch (scene.renderMode) {
+            case Scene.RenderMode.SOLID:
+                solidRenderer.render(scene, camera, VP);
+                break;
+            case Scene.RenderMode.WIRE_FRAME:
+                wireFrameRenderer.render(scene, VP);
+                break;
+            default:
+                throw new IllegalStateException("Unsupported render mode");
         }
+
         frameBuffer.present();
     }
 
@@ -63,32 +59,59 @@ public class Renderer {
      * @param MVP:      model-view-projection matrix
      * @param out:      store computed vertices here (x, y, z, w)
      */
-    static void computeClipVertices(float[] vertices, float[][] MVP, float[] out) {
-        for (int i = 0; i < vertices.length / Renderer.VERTEX_STRIDE; i++) {
+    static void computeLocalToClipVertices(float[] vertices, float[][] MVP, float[] out, int stride) {
+        for (int i = 0; i < vertices.length / stride; i++) {
 
-            float x = vertices[i * Renderer.VERTEX_STRIDE];
-            float y = vertices[i * Renderer.VERTEX_STRIDE + 1];
-            float z = vertices[i * Renderer.VERTEX_STRIDE + 2];
+            float x = vertices[i * stride];
+            float y = vertices[i * stride + 1];
+            float z = vertices[i * stride + 2];
 
             //to avoid float[] creation through Matrix.matmul
-            directMatmul(out, i * Renderer.CLIP_STRIDE, MVP, x, y, z, 1);
+            directMatmul4(out, i * Renderer.CLIP_STRIDE, MVP, x, y, z, 1);
         }
     }
 
     /**
-     * Computes matrix @ [x, y, z, w] and stores the resulting vector in storageArray, starting at startIdx
+     * Computes matrix @ [x, y, z] and stores the resulting vector in storageArray, starting at startIdx
      *
      * @param storageArray array to store matmul result in
      * @param startIdx     index to start storing matmul result at
-     * @param matrix       LHS operator of matmul (4x4 matrix)
+     * @param matrix       LHS operator of matmul (3x3 matrix)
      * @param x            1st coord of RHS operator (vector) of matmul
      * @param y            2nd coord of RHS operator (vector) of matmul
      * @param z            3rd coord of RHS operator (vector) of matmul
-     * @param w            4th coord of RHS operator (vector) of matmul
      */
-    static void directMatmul(float[] storageArray, int startIdx, float[][] matrix, float x, float y, float z, float w) {
+    static void directMatmul3(float[] storageArray, int startIdx, float[][] matrix, float x, float y, float z) {
 
-        assert matrix.length == 4 && matrix[0].length == 4;
+        assert matrix.length == 3 && matrix[0].length == 3: "incorrect matrix size for directMatmul3";
+
+//        if (matrix.length != 4 || matrix[0].length != 4)
+//            throw new IllegalArgumentException("directMatmul only computes @ of 4x4 matrix & vector4");
+
+        float resX = 0;
+        float resY = 0;
+        float resZ = 0;
+
+        resX += matrix[0][0] * x;
+        resX += matrix[0][1] * y;
+        resX += matrix[0][2] * z;
+
+        resY += matrix[1][0] * x;
+        resY += matrix[1][1] * y;
+        resY += matrix[1][2] * z;
+
+        resZ += matrix[2][0] * x;
+        resZ += matrix[2][1] * y;
+        resZ += matrix[2][2] * z;
+
+        storageArray[startIdx] = resX;
+        storageArray[startIdx + 1] = resY;
+        storageArray[startIdx + 2] = resZ;
+    }
+
+    static void directMatmul4(float[] storageArray, int startIdx, float[][] matrix, float x, float y, float z, float w) {
+
+        assert matrix.length == 4 && matrix[0].length == 4: "incorrect matrix size for directMatmul4: ("+matrix.length+","+matrix[0].length+")";
 
 //        if (matrix.length != 4 || matrix[0].length != 4)
 //            throw new IllegalArgumentException("directMatmul only computes @ of 4x4 matrix & vector4");
