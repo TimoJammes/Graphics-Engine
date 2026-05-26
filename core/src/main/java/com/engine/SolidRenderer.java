@@ -9,7 +9,7 @@ public class SolidRenderer {
     private static final RenderOptions DEFAULT_RENDER_OPTIONS = new RenderOptions();
     private static final float WIRE_FRAME_DEPTH_EPSILON = 1e-5f;
     private static final int WORLD_STRIDE = 3;
-    private static final int LIGHT_BUFFER_STRIDE = 2;
+//    private static final int LIGHT_BUFFER_STRIDE = 2;
     private final FrameBuffer frameBuffer;
     /**
      * stores clip-space vertices
@@ -41,9 +41,11 @@ public class SolidRenderer {
 
     private int vertexStride;
 
-    private Scene currentScene;
+    private Scene currScene;
 
     private Camera currCam;
+    private Entity currEntity;
+
 
     SolidRenderer(FrameBuffer frameBuffer) {
         this.frameBuffer = frameBuffer;
@@ -58,17 +60,20 @@ public class SolidRenderer {
         if (vertexCount <= currentMaxVertices) return;
         currentMaxVertices = vertexCount;
         worldBuffer = new float[currentMaxVertices * Renderer.CLIP_STRIDE];
-        worldNormalsBuffer = new float[currentMaxVertices * WORLD_STRIDE];
         clipBuffer = new float[currentMaxVertices * Renderer.CLIP_STRIDE * 4];
         triangleBuffer = new int[currentMaxVertices * 2];
-        triangleLightBuffer = new float[currentMaxVertices * 2];
         postClipTriangleIndicesBuffer = new int[currentMaxVertices * 2 * 7 * 3];
-        postClipTriangleLightBuffer = new float[currentMaxVertices * 2 * 7 * 3];
         screenBuffer = new float[currentMaxVertices * 2 * 7 * 3 * 3];
+
+        if (currScene.hasLight()) {
+            worldNormalsBuffer = new float[currentMaxVertices * WORLD_STRIDE];
+            triangleLightBuffer = new float[currentMaxVertices * 2 * 2];
+            postClipTriangleLightBuffer = new float[currentMaxVertices * 2 * 7 * 3];
+        }
     }
 
     void render(Scene scene, Camera currCam, float[][] VP) {
-        currentScene = scene;
+        currScene = scene;
         this.currCam = currCam;
         for (Entity entity : scene.entities) {
             RenderOptions options = scene.renderOptions.getOrDefault(entity, DEFAULT_RENDER_OPTIONS);
@@ -76,40 +81,53 @@ public class SolidRenderer {
             render(entity, VP, options);
         }
 
-        currentScene = null;
+        currScene = null;
         this.currCam = null;
     }
 
     void render(Entity entity, float[][] VP, RenderOptions options) {
 
+        currEntity = entity;
+
         vertexStride = entity.mesh.stride;
 
-        ensureCapacity(entity.mesh.vertices.length / vertexStride);
-
-        float[][] M = entity.transform.toMatrix();
-//        float[][] MVP = Matrix.matmul(VP, M); //Model-View-Projection Matrix
-
-        final float[] vertices = entity.mesh.vertices;
-        final int[] indices = entity.mesh.indices;
-
+        final float[] vertices = currEntity.mesh.vertices;
+        final int[] indices = currEntity.mesh.indices;
         totalVertices = vertices.length / vertexStride;
 
-        computeWorldVertices(vertices, M, worldBuffer, vertexStride);
+        ensureCapacity(vertices.length / vertexStride);
 
-        if (entity.hasNormals)
-            //matrix recomputed when toMatrix() called for M computation above
-            computeWorldNormals(vertices, entity.transform.rotation.matrix, worldNormalsBuffer, vertexStride);
+        float[][] M = currEntity.transform.toMatrix();
 
-        computeWorldToClipVertices(worldBuffer, VP, clipBuffer, Renderer.CLIP_STRIDE);
 
-//        Renderer.computeLocalToClipVertices(vertices, MVP, clipBuffer, vertexStride);
+        if (currScene.hasLight()) {
 
-        int triangleCount = cullOutsideTriangles(indices, clipBuffer, triangleBuffer, entity.mesh.isClosed);
+            computeWorldVertices(vertices, M, worldBuffer, vertexStride);
 
-        if (entity.hasNormals && currentScene.light != null)
+            if (currEntity.hasNormals)
+                //matrix recomputed and stored when toMatrix() called for M computation above
+                computeWorldNormals(vertices, currEntity.transform.rotation.matrix, worldNormalsBuffer, vertexStride);
+
+            computeWorldToClipVertices(worldBuffer, VP, clipBuffer, Renderer.CLIP_STRIDE);
+
+        } else {
+            float[][] MVP = Matrix.matmul(VP, M); //Model-View-Projection Matrix
+            Renderer.computeLocalToClipVertices(vertices, MVP, clipBuffer, vertexStride);
+        }
+
+
+        int triangleCount = cullOutsideTriangles(indices, clipBuffer, triangleBuffer, currEntity.mesh.isClosed);
+
+
+        if (currScene.hasLight() && currEntity.hasNormals)
             computeFlatLighting(triangleCount, indices, triangleLightBuffer);
-        else
-            Arrays.fill(triangleLightBuffer, 0, triangleCount, 1f);
+        else {
+//            for (int i = 0; i < triangleCount; i++) {
+//                //set diffusion to 1, spectral to 0 (no light)
+//                triangleLightBuffer[i] = (i % 2 == 0) ? 1f : 0f;
+//            }
+//            Arrays.fill(triangleLightBuffer, 0, triangleCount, 1f);
+        }
 
         int postClipTriangleCount = SHClipTriangles(triangleCount, indices, postClipTriangleIndicesBuffer, postClipTriangleLightBuffer);
 
@@ -129,7 +147,9 @@ public class SolidRenderer {
 
         computeScreenVertices(postClipTriangleCount, screenBuffer);
 
-        displayTriangles(options, entity.color, postClipTriangleCount);
+        displayTriangles(options, currEntity.color, postClipTriangleCount);
+
+        currEntity = null;
     }
 
 
@@ -189,9 +209,9 @@ public class SolidRenderer {
             float baryY = (worldBuffer[a * Renderer.CLIP_STRIDE + 1] + worldBuffer[b * Renderer.CLIP_STRIDE + 1] + worldBuffer[c * Renderer.CLIP_STRIDE + 1]) / 3f;
             float baryZ = (worldBuffer[a * Renderer.CLIP_STRIDE + 2] + worldBuffer[b * Renderer.CLIP_STRIDE + 2] + worldBuffer[c * Renderer.CLIP_STRIDE + 2]) / 3f;
 
-            float lightX = currentScene.light.getPosition()[0];
-            float lightY = currentScene.light.getPosition()[1];
-            float lightZ = currentScene.light.getPosition()[2];
+            float lightX = currScene.light.getPosition()[0];
+            float lightY = currScene.light.getPosition()[1];
+            float lightZ = currScene.light.getPosition()[2];
 
             float dirX = lightX - baryX;
             float dirY = lightY - baryY;
@@ -202,9 +222,7 @@ public class SolidRenderer {
             dirY /= len2;
             dirZ /= len2;
 
-            float dot = dirX * nx + dirY * ny + dirZ * nz;
-            float diffuse = Math.max(dot, 0);
-
+            float diffuseDot = dirX * nx + dirY * ny + dirZ * nz;
 
             float lx = -dirX, ly = -dirY, lz = -dirZ;
             float dotLN = lx * nx + ly * ny + lz * nz;
@@ -223,9 +241,11 @@ public class SolidRenderer {
             float specDot = vx * rx + vy * ry + vz * rz;
             float specular = (float) Math.pow(Math.max(specDot, 0f), 32);
 
+            float diffuseIntensity = Math.max(0f, diffuseDot) * currEntity.material.diffuseStrength;
+            float specularIntensity = (float) Math.pow(Math.max(0f, specDot), currEntity.material.shininess) * currEntity.material.specularStrength;
+            float ambientIntensity = 1f * currEntity.material.ambientStrength;
 
-            triangleLightBuffer[i * LIGHT_BUFFER_STRIDE] = diffuse;
-            triangleLightBuffer[i * LIGHT_BUFFER_STRIDE + 1] = specular;
+            triangleLightBuffer[i] = Math.min(ambientIntensity + diffuseIntensity + specularIntensity, 1.0f);
 
         }
     }
@@ -301,15 +321,24 @@ public class SolidRenderer {
             int polyVertexCount = clipTriangleAllPlanes(a, b, c);
             if (polyVertexCount == 0) continue;  // fully outside
 
-            float parentDiffusion = triangleLightBuffer[i * LIGHT_BUFFER_STRIDE];
-            float parentSpecular = triangleLightBuffer[i * LIGHT_BUFFER_STRIDE + 1];
+//            float parentDiffusion = 0, parentSpecular = 0;
+            float parentIntensity = 0;
+            if (currScene.hasLight()) {
+                parentIntensity = triangleLightBuffer[i];
+//                parentDiffusion = triangleLightBuffer[i * LIGHT_BUFFER_STRIDE];
+//                parentSpecular = triangleLightBuffer[i * LIGHT_BUFFER_STRIDE + 1];
+            }
 
             for (int j = 1; j < polyVertexCount - 1; j++) {
                 out[postClipTriangleCount * 3] = polyIn[0];
                 out[postClipTriangleCount * 3 + 1] = polyIn[j];
                 out[postClipTriangleCount * 3 + 2] = polyIn[j + 1];
-                lightOut[postClipTriangleCount * LIGHT_BUFFER_STRIDE] = parentDiffusion;
-                lightOut[postClipTriangleCount * LIGHT_BUFFER_STRIDE + 1] = parentSpecular;
+
+                if (currScene.hasLight()) {
+                    lightOut[postClipTriangleCount] = parentIntensity;
+//                    lightOut[postClipTriangleCount * LIGHT_BUFFER_STRIDE] = parentDiffusion;
+//                    lightOut[postClipTriangleCount * LIGHT_BUFFER_STRIDE + 1] = parentSpecular;
+                }
                 postClipTriangleCount++;
 
             }
@@ -575,25 +604,28 @@ public class SolidRenderer {
 
     private Color getRenderColor(RenderOptions options, Color baseColor, int idx) {
 
-        if (options.isLightObj)
+        if (currEntity.isLightObj || !currScene.hasLight())
             return baseColor;
 
-        float ambientIntensity = 0.2f;
+//        float ambientIntensity = 0.2f;
+//
+//        float diffuseIntensity = postClipTriangleLightBuffer[idx * LIGHT_BUFFER_STRIDE];
+//
+//        float specularStrength = .5f;
+//        float specularIntensity = specularStrength * postClipTriangleLightBuffer[idx * LIGHT_BUFFER_STRIDE + 1];
+//
+//        float intensity = Math.min(ambientIntensity + diffuseIntensity + specularIntensity, 1.0f);
 
-        float diffuseIntensity = postClipTriangleLightBuffer[idx * LIGHT_BUFFER_STRIDE];
+        float intensity = postClipTriangleLightBuffer[idx];
 
-        float specularStrength = .5f;
-        float specularIntensity = specularStrength * postClipTriangleLightBuffer[idx * LIGHT_BUFFER_STRIDE + 1];
-
-        float intensity = Math.min(ambientIntensity + diffuseIntensity + specularIntensity, 1);
         scratchColor.set(baseColor);
 
-        if (currentScene.light == null)
+        if (currScene.light == null)
             return scratchColor.mul(intensity);
 
-        scratchColor.r *= currentScene.light.color.r * intensity;
-        scratchColor.g *= currentScene.light.color.g * intensity;
-        scratchColor.b *= currentScene.light.color.b * intensity;
+        scratchColor.r *= currScene.light.color.r * intensity;
+        scratchColor.g *= currScene.light.color.g * intensity;
+        scratchColor.b *= currScene.light.color.b * intensity;
         return scratchColor;
 
 //        if (!options.randomizeTexture) {
