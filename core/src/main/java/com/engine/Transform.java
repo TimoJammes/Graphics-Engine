@@ -5,7 +5,7 @@ public class Transform {
     float[] scale; //sx, sy, sz
     Quaternion rotation;
 
-     Transform(float[] position, Quaternion rotation, float[] scale) {
+    Transform(float[] position, Quaternion rotation, float[] scale) {
         this.position = position;
         this.scale = scale;
         this.rotation = rotation;
@@ -18,17 +18,18 @@ public class Transform {
     }
 
     void translateWorld(float dx, float dy, float dz) {
-         position = Matrix.add(position, new float[]{dx, dy, dz, 0});
+        position = Matrix.add(position, new float[]{dx, dy, dz, 0});
 
 
     }
+
     void translateLocal(float dx, float dy, float dz) {
 
-         float[] forward = rotation.rotate(dx, dy, dz);
-         position = Matrix.add(position, forward);
+        float[] forward = rotation.rotate(dx, dy, dz);
+        position = Matrix.add(position, forward);
     }
 
-     final float[][] toMatrix() {
+    final float[][] toMatrix() {
         final float[][] res = new float[4][4];
 
         final float[][] quaternionMatrix = rotation.toMatrix();
@@ -50,9 +51,11 @@ public class Transform {
     float[] getUp() {
         return rotation.getUp();
     }
+
     float[] getForward() {
         return rotation.getForward();
     }
+
     float[] getRight() {
         return rotation.getRight();
     }
@@ -61,5 +64,13 @@ public class Transform {
         position = new float[]{0, 0, 0, 1};
         rotation = new Quaternion();
         scale = new float[]{1, 1, 1};
+    }
+
+    public Transform clone() {
+        Transform copy = new Transform();
+        copy.position = position.clone();
+        copy.scale = scale.clone();
+        copy.rotation = rotation.clone();
+        return copy;
     }
 }
