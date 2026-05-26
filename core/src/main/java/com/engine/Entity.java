@@ -11,17 +11,25 @@ public class Entity implements Movable {
 
     final Transform transform;
     final Mesh mesh;
+    final Material material;
+
     Color color;
     boolean hasNormals = false;
+    boolean isLightObj = false;
 
     List<Behavior> behaviors = new ArrayList<>();
 
 //    String name;
 
-    public Entity(Transform transform, Mesh mesh, Color color) {
+    public Entity(Transform transform, Mesh mesh, Color color, Material material) {
         this.transform = transform;
         this.mesh = mesh;
         this.color = color;
+        this.material = material;
+    }
+
+    public Entity(Transform transform, Mesh mesh, Color color) {
+        this(transform, mesh, color, new Material());
 
 //        System.out.println(mesh.vertices.length / 3);
     }
@@ -42,9 +50,14 @@ public class Entity implements Movable {
 //        Mesh mesh1 = new Mesh(res.vertices, res.indices);
         assert res.hasNormals() : "entity loaded from .obj has no normals";
         Mesh mesh1 = new Mesh(res.vertices, res.normals, res.indices);
-        System.out.println(res.vertices.length);
+//        System.out.println(res.vertices.length);
         this(mesh1, res.color);
         hasNormals = true;
+    }
+
+    public Entity(Entity e) {
+        this(e.transform.clone(), e.mesh, e.color);
+        hasNormals = e.hasNormals;
     }
 
     public void setPos(float x, float y, float z) {
@@ -81,6 +94,10 @@ public class Entity implements Movable {
 
     public double angleAroundAxis(float ax, float ay, float az) {
         return transform.rotation.angleAroundAxis(ax, ay, az);
+    }
+
+    public Light generateLight(Light.Type type) {
+        return new Light(type, this, color);
     }
 }
 
