@@ -4,7 +4,7 @@ import com.badlogic.gdx.graphics.Color;
 
 public class Light {
 
-    enum Type {DIRECTIONAL, POINT, SPOT}
+    public enum Type {DIRECTIONAL, POINT, SPOT}
 
     private Entity entity;
     private Type type;
