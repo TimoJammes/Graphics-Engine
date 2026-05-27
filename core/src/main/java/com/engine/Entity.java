@@ -13,7 +13,6 @@ public class Entity implements Movable {
     final Mesh mesh;
     final Material material;
 
-    Color color;
     boolean hasNormals = false;
     boolean isLightObj = false;
 
@@ -21,23 +20,19 @@ public class Entity implements Movable {
 
 //    String name;
 
-    public Entity(Transform transform, Mesh mesh, Color color, Material material) {
+    public Entity(Transform transform, Mesh mesh, Material material) {
         this.transform = transform;
         this.mesh = mesh;
-        this.color = color;
         this.material = material;
     }
 
-    public Entity(Transform transform, Mesh mesh, Color color) {
-        this(transform, mesh, color, new Material());
-
-//        System.out.println(mesh.vertices.length / 3);
+    public Entity(Mesh mesh, Material material) {
+        this(new Transform(), mesh, material);
     }
 
-    public Entity(Mesh mesh, Color color) {
-        this(new Transform(), mesh, color);
+    public Entity(Mesh mesh) {
+        this(new Transform(), mesh, new Material());
     }
-
     public Entity(String objFilePath) {
         ObjLoader.Result res;
         try {
@@ -50,13 +45,27 @@ public class Entity implements Movable {
 //        Mesh mesh1 = new Mesh(res.vertices, res.indices);
         assert res.hasNormals() : "entity loaded from .obj has no normals";
         Mesh mesh1 = new Mesh(res.vertices, res.normals, res.indices);
+
+        Material material = new Material();
+        if (res.diffuse != null) {
+            material.diffuse = res.diffuse;
+        }
+        if (res.ambient != null) {
+            material.ambient = res.ambient;
+        }
+        if (res.specular != null) {
+            material.specular = res.specular;
+        }
+        if (res.shininess != -1f) {
+            material.shininess = res.shininess;
+        }
 //        System.out.println(res.vertices.length);
-        this(mesh1, res.color);
+        this(mesh1, material);
         hasNormals = true;
     }
 
     public Entity(Entity e) {
-        this(e.transform.clone(), e.mesh, e.color);
+        this(e.transform.clone(), e.mesh, e.material.clone());
         hasNormals = e.hasNormals;
     }
 
@@ -97,7 +106,7 @@ public class Entity implements Movable {
     }
 
     public Light generateLight(Light.Type type) {
-        return new Light(type, this, color);
+        return new Light(type, this, material.clone());
     }
 }
 
@@ -148,14 +157,14 @@ class SphereEntity extends Entity {
 
         Mesh mesh = new Mesh(vertices, indices);
 
-        super(mesh, Color.WHITE);
+        super(mesh);
     }
 }
 
 class GroundEntity extends Entity {
 
 
-    GroundEntity(Color color, int tilesX, int tilesY, float sizeX, float sizeY) {
+    GroundEntity(int tilesX, int tilesY, float sizeX, float sizeY) {
 
         float[] vertices = new float[tilesX * tilesY * 3];
 
@@ -197,7 +206,7 @@ class GroundEntity extends Entity {
 
         Mesh mesh = new Mesh(vertices, normals, indices);
 
-        super(mesh, color);
+        super(mesh);
         hasNormals = true;
         mesh.isClosed = false;
 
