@@ -17,6 +17,7 @@ public abstract class Scene {
 
     final List<Entity> entities = new ArrayList<>();
     Light light;
+    LightingType lightingType = LightingType.GOURAUD;
 //    final List<Light> lights = new ArrayList<>();
 
     final Map<Entity, RenderOptions> renderOptions = new HashMap<>();
@@ -71,8 +72,8 @@ class TeapotScene extends Scene {
 //            .pos(0, 0, 0)
             .rotateWorld(-Math.PI / 2, 1, 0, 0)
             .color(Color.PINK)
-            .behavior(new RotateBehavior(-Math.PI / 3, new float[]{0, 1, 0}))
-            .behavior(new RotateBehavior(Math.PI / 5, new float[]{1, 0, 0}))
+            .behavior(new RotateBehavior(-Math.PI / 6, new float[]{0, 1, 0}))
+            .behavior(new RotateBehavior(Math.PI / 10, new float[]{1, 0, 0}))
 //            .showWireFrame()
             .spawn();
 
@@ -84,7 +85,7 @@ class TeapotScene extends Scene {
         Entity lightObj = entity(new SphereEntity(.1f))
             .pos(4, 6, 0)
             .color(Color.WHITE)
-            .behavior(new CircleBehavior(Math.PI / 4, new float[]{0, 6, 0}, new float[]{0, 1, 0}))
+            .behavior(new CircleBehavior(Math.PI / 8, new float[]{0, 6, 0}, new float[]{0, 1, 0}))
             .spawn();
 
         light(lightObj, Light.Type.POINT);
@@ -121,7 +122,7 @@ class MultiScene extends Scene {
             .spawn();
 
         entity(new GroundEntity(Color.GREEN, 100, 100, 50, 50))
-            .scale(2f)
+//            .scale(2f)
             .spawn();
 
         Entity lightObj = entity(new SphereEntity(.1f))
