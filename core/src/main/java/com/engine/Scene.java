@@ -51,7 +51,7 @@ public abstract class Scene {
 
     protected void light(Entity lightObj, Light.Type type) {
         lightObj.isLightObj = true;
-        light = new Light(type, lightObj, lightObj.color);
+        light = new Light(type, lightObj, lightObj.material);
     }
 
     boolean hasLight() {
@@ -71,20 +71,20 @@ class TeapotScene extends Scene {
         entity("teapot.obj")
 //            .pos(0, 0, 0)
             .rotateWorld(-Math.PI / 2, 1, 0, 0)
-            .color(Color.PINK)
+            .diffuse(Color.PINK)
             .behavior(new RotateBehavior(-Math.PI / 6, new float[]{0, 1, 0}))
             .behavior(new RotateBehavior(Math.PI / 10, new float[]{1, 0, 0}))
 //            .showWireFrame()
             .spawn();
 
-        GroundEntity ground = new GroundEntity(Color.DARK_GRAY, 100, 100, 20, 20);
+        GroundEntity ground = new GroundEntity(100, 100, 20, 20);
         entity(ground)
             .pos(0, -3, 0)
             .spawn();
 
         Entity lightObj = entity(new SphereEntity(.1f))
             .pos(4, 6, 0)
-            .color(Color.WHITE)
+            .diffuse(Color.WHITE)
             .behavior(new CircleBehavior(Math.PI / 8, new float[]{0, 6, 0}, new float[]{0, 1, 0}))
             .spawn();
 
@@ -99,13 +99,22 @@ class MultiScene extends Scene {
         backgroundColor = Color.BLUE;
 
         Entity beaver1 = entity("OBJ-animals/animal-beaver.obj")
-            .color(Color.BROWN)
+            .material(new Material(Material.Type.BRONZE))
+//            .diffuse(Color.BROWN)
             .pos(0, 0, -2)
             .behavior(new RotateBehavior(Math.PI, new float[]{0, 1, 0}))
             .spawn();
 
+//        System.out.println(beaver1.material.diffuse);
+//        System.out.println(beaver1.material.ambient);
+//        System.out.println(beaver1.material.specular);
+//        System.out.println(beaver1.material.shininess);
+
         float[] pos2 = new float[]{0, 1, 2};
-        entity(new Entity(beaver1))
+        Entity beaver2 = new Entity(beaver1);
+        System.out.println(beaver2.material.diffuse);
+        entity(beaver2)
+//            .material(new Material(Material.Type.EMERALD))
             .pos(pos2)
             .rotateWorld(Math.PI, 0, 1, 0)
             .behavior(new OscillateBehavior(1, new float[]{0, 1, 0}, pos2))
@@ -121,14 +130,18 @@ class MultiScene extends Scene {
             .rotateWorld(Math.PI / 2, 0, 1, 0)
             .spawn();
 
-        entity(new GroundEntity(Color.GREEN, 100, 100, 50, 50))
+        entity(new GroundEntity(100, 100, 50, 50))
 //            .scale(2f)
+            .diffuse(Color.GREEN)
+//            .specular(new Color(1, 1, 1, 1))
+//            .shininess(32)
             .spawn();
 
         Entity lightObj = entity(new SphereEntity(.1f))
-            .pos(4, 3, 0)
-            .color(Color.WHITE)
-            .behavior(new CircleBehavior(Math.PI / 8, new float[]{0, 3, 0}, new float[]{0, 1, 0}))
+            .pos(4, 5, 0)
+            .diffuse(Color.WHITE)
+            .behavior(new CircleBehavior(Math.PI / 8, new float[]{0, 5, 0}, new float[]{0, 1, 0}))
+//            .behavior(new OscillateBehavior(1, new float[]{0, 1, 0}, new float[]{4, 5, 0}))
             .spawn();
 
         light(lightObj, Light.Type.POINT);
@@ -141,7 +154,7 @@ class AnimalScene extends Scene {
         backgroundColor = Color.BLUE;
 
         entity("OBJ-animals/animal-beaver.obj")
-            .color(Color.BROWN)
+            .diffuse(Color.BROWN)
             .pos(0, 0, -3)
             .behavior(new RotateBehavior(Math.PI, new float[]{0, 1, 0}))
             .spawn();
@@ -158,7 +171,7 @@ class GroundScene extends Scene {
 
         backgroundColor = Color.BLUE;
 
-        entity(new GroundEntity(Color.GREEN, tilesX, tilesY, 10, 10))
+        entity(new GroundEntity(tilesX, tilesY, 10, 10))
             .pos(0, -.5f, 0)
             .scale(0.1f)
             .spawn();
@@ -172,7 +185,7 @@ class TestScene extends Scene {
 
         entity("jet.obj")
             .scale(1f)
-            .color(Color.GRAY)
+            .diffuse(Color.GRAY)
             .spawn();
     }
 }
@@ -187,7 +200,7 @@ class BenchMarkScene extends Scene {
         for (int x = -numX / 2; x < Math.max(1, numX / 2); x++) {
             for (int y = -numY / 2; y < Math.max(1, numY / 2); y++) {
                 entity("OBJ-animals/animal-beaver.obj")
-                    .color(Color.BROWN)
+                    .diffuse(Color.BROWN)
                     .pos(x + .5f, y + .5f, -4)
                     .behavior(new RotateBehavior(Math.PI / 4, new float[]{0, 1, 0}))
                     .showWireFrame()
