@@ -10,20 +10,22 @@ public class Light {
     Type type;
     private float[] direction;  // used by DIRECTIONAL and SPOT
     private float cutoffAngle;  // used by SPOT only
-    Color color;
-    private float intensity;
+    Color diffuse;
+    Color specular;
+    Color ambient;
 
-    Light(Type type, Entity entity, float[] direction, float cutoffAngle, Color color, float intensity) {
+    Light(Type type, Entity entity, float[] direction, float cutoffAngle, Color diffuse, Color specular, Color ambient) {
         this.type = type;
         this.direction = direction;
         this.cutoffAngle = cutoffAngle;
-        this.color = color;
-        this.intensity = intensity;
+        this.diffuse = diffuse;
+        this.specular = specular;
+        this.ambient = ambient;
         this.entity = entity;
     }
 
-    Light(Type type, Entity entity, Color color) {
-        this(type, entity, null, -1, color, 1);
+    Light(Type type, Entity entity, Material material) {
+        this(type, entity, null, -1, material.diffuse, material.specular, material.ambient);
     }
 
     float[] getPosition() {return entity.transform.position;}
