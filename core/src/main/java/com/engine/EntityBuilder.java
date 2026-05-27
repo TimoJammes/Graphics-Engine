@@ -25,18 +25,10 @@ public class EntityBuilder {
         return this;
     }
 
-    public EntityBuilder material(Material material) {
-        entity.material.ambientStrength = material.ambientStrength;
-        entity.material.diffuseStrength = material.diffuseStrength;
-        entity.material.specularStrength = material.specularStrength;
-        entity.material.shininess = material.shininess;
-        return this;
-    }
-
-    public EntityBuilder material(float ambientStrength, float diffuseStrength, float specularStrength, int shininess) {
-        entity.material.ambientStrength = ambientStrength;
-        entity.material.diffuseStrength = diffuseStrength;
-        entity.material.specularStrength = specularStrength;
+    public EntityBuilder material(Color ambient, Color diffuse, Color specular, int shininess) {
+        entity.material.ambient = ambient;
+        entity.material.diffuse = diffuse;
+        entity.material.specular = specular;
         entity.material.shininess = shininess;
         return this;
     }
@@ -50,8 +42,24 @@ public class EntityBuilder {
         return this;
     }
 
-    public EntityBuilder color(Color color) {
-        entity.color = color;
+    public EntityBuilder material(Material material) {
+        entity.material.set(material);
+        return this;
+    }
+    public EntityBuilder diffuse(Color diffuse) {
+        entity.material.diffuse.set(diffuse);
+        return this;
+    }
+    public EntityBuilder specular(Color specular) {
+        entity.material.specular.set(specular);
+        return this;
+    }
+    public EntityBuilder ambient(Color ambient) {
+        entity.material.ambient.set(ambient);
+        return this;
+    }
+    public EntityBuilder shininess(float shininess) {
+        entity.material.shininess = shininess;
         return this;
     }
 
