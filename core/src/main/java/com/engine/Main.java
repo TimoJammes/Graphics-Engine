@@ -9,6 +9,7 @@ import com.badlogic.gdx.Gdx;
 //import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 
 //import com.badlogic.gdx.graphics.GL20;
+import com.badlogic.gdx.Input;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
@@ -50,7 +51,10 @@ public class Main extends ApplicationAdapter implements EngineListener {
 
         engine.setListener(this);
 
-        engine.setScene(new AnimalScene());
+//        engine.setScene(new GroundScene(1000, 1000));
+        engine.setScene(new MultiScene());
+
+//        engine.camera.transform.position = new float[]{43, 1990, -680};
 
         eventQueue.add(Event.DRAW);
     }
@@ -58,6 +62,9 @@ public class Main extends ApplicationAdapter implements EngineListener {
     @Override
     public void render() {
 
+
+        if (Gdx.input.isKeyJustPressed(Input.Keys.L))
+            engine.scene.lightingType = (engine.scene.lightingType == LightingType.FLAT) ? LightingType.GOURAUD : LightingType.FLAT;
         float dt = Gdx.graphics.getDeltaTime();
         engine.update(dt);
 
@@ -85,7 +92,7 @@ public class Main extends ApplicationAdapter implements EngineListener {
 //        ScreenUtils.clear(Color.BLACK);
         engine.renderScene();
         batch.begin();
-        font.draw(batch, "FPS: " + Gdx.graphics.getFramesPerSecond(), 10, Gdx.graphics.getHeight() - 10);
+        font.draw(batch, "FPS: " + Gdx.graphics.getFramesPerSecond(), 10, Main.SCREEN_HEIGHT - 10);
 //        font.draw(batch, "FPS: " + Math.round(1/dt), 10, Gdx.graphics.getHeight() - 10);
         batch.end();
     }
