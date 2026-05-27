@@ -7,7 +7,7 @@ public class Light {
     public enum Type {DIRECTIONAL, POINT, SPOT}
 
     private Entity entity;
-    private Type type;
+    Type type;
     private float[] direction;  // used by DIRECTIONAL and SPOT
     private float cutoffAngle;  // used by SPOT only
     Color color;
