@@ -17,7 +17,8 @@ public class SolidRenderer {
     private float[] worldNormalsBuffer;
 
     private float[] triangleLightBuffer; //flat face shading
-    private float[] triangleVerticesLightBuffer; //gouraud shading
+    //    private float[] triangleVerticesLightBuffer; //gouraud shading
+    private float[] vertexLightBuffer;
     /**
      * stores indices of non-culled triangles (each index points to the first index of a triangle in indices)
      */
@@ -67,12 +68,13 @@ public class SolidRenderer {
         if (currScene.hasLight()) {
             worldNormalsBuffer = new float[currentMaxVertices * WORLD_STRIDE];
 //            if (currScene.lightingType == LightingType.FLAT) {
-                triangleLightBuffer = new float[currentMaxVertices * 2];
-//                postClipTriangleLightBuffer = new float[currentMaxVertices * 2 * 7];
+            triangleLightBuffer = new float[currentMaxVertices * 2];
+//            }
+//            if (currScene.lightingType == LightingType.GOURAUD) {
+            vertexLightBuffer = new float[currentMaxVertices * 4];
 //            }
 //            else if  (currScene.lightingType == LightingType.GOURAUD) {
-                triangleVerticesLightBuffer = new float[currentMaxVertices * 2 * 3];
-                postClipTriangleLightBuffer = new float[currentMaxVertices * 2 * 7 * 3];
+            postClipTriangleLightBuffer = new float[currentMaxVertices * 2 * 3 * 7];
 //            }
         }
     }
@@ -126,19 +128,17 @@ public class SolidRenderer {
 
         if (currScene.hasLight() && currEntity.hasNormals)
 
-            if (currScene.lightingType ==  LightingType.FLAT) {
+            if (currScene.lightingType == LightingType.FLAT) {
                 computeFlatLighting(triangleCount, indices, triangleLightBuffer);
-            }
-            else if (currScene.lightingType == LightingType.GOURAUD) {
-                computeGouraudLighting(triangleCount, indices, triangleVerticesLightBuffer);
-            }
-        else {
+            } else if (currScene.lightingType == LightingType.GOURAUD) {
+                computeGouraudLighting(totalVertices, vertexLightBuffer);
+            } else {
 //            for (int i = 0; i < triangleCount; i++) {
 //                //set diffusion to 1, spectral to 0 (no light)
 //                triangleLightBuffer[i] = (i % 2 == 0) ? 1f : 0f;
 //            }
 //            Arrays.fill(triangleLightBuffer, 0, triangleCount, 1f);
-        }
+            }
 
         int postClipTriangleCount = SHClipTriangles(triangleCount, indices, postClipTriangleIndicesBuffer, postClipTriangleLightBuffer);
 
@@ -253,153 +253,70 @@ public class SolidRenderer {
             viewZ /= vLen;
 
             float specDot = viewX * reflectionX + viewY * reflectionY + viewZ * reflectionZ;
-            float specular = (float) Math.pow(Math.max(specDot, 0f), 32);
+            float specular = (float) Math.pow(Math.max(specDot, 0f), currEntity.material.shininess);
 
             float diffuseIntensity = Math.max(0f, diffuseDot) * currEntity.material.diffuseStrength;
-            float specularIntensity = (float) Math.pow(Math.max(0f, specDot), currEntity.material.shininess) * currEntity.material.specularStrength;
+            float specularIntensity = (float) specular * currEntity.material.specularStrength;
             float ambientIntensity = 1f * currEntity.material.ambientStrength;
 
             triangleLightBuffer[i] = Math.min(ambientIntensity + diffuseIntensity + specularIntensity, 1.0f);
         }
     }
 
-    void computeGouraudLighting(int triangleCount, int[] indices, float[] out) {
-        for (int i = 0; i < triangleCount; i++) {
-            int idx = triangleBuffer[i];
-            int a = indices[idx];
-            int b = indices[idx + 1];
-            int c = indices[idx + 2];
+    void computeGouraudLighting(int vertexCount, float[] out) {
+        float lightX = currScene.light.getPosition()[0];
+        float lightY = currScene.light.getPosition()[1];
+        float lightZ = currScene.light.getPosition()[2];
+        for (int i = 0; i < vertexCount; i++) {
 
-            float nAx = worldNormalsBuffer[a * WORLD_STRIDE];
-            float nAy = worldNormalsBuffer[a * WORLD_STRIDE + 1];
-            float nAz = worldNormalsBuffer[a * WORLD_STRIDE + 2];
-            float nBx = worldNormalsBuffer[b * WORLD_STRIDE];
-            float nBy = worldNormalsBuffer[b * WORLD_STRIDE + 1];
-            float nBz = worldNormalsBuffer[b * WORLD_STRIDE + 2];
-            float nCx = worldNormalsBuffer[c * WORLD_STRIDE];
-            float nCy = worldNormalsBuffer[c * WORLD_STRIDE + 1];
-            float nCz = worldNormalsBuffer[c * WORLD_STRIDE + 2];
+            float nx = worldNormalsBuffer[i * WORLD_STRIDE];
+            float ny = worldNormalsBuffer[i * WORLD_STRIDE + 1];
+            float nz = worldNormalsBuffer[i * WORLD_STRIDE + 2];
 
 
-            float aX = worldBuffer[a * Renderer.CLIP_STRIDE];
-            float aY = worldBuffer[a * Renderer.CLIP_STRIDE + 1];
-            float aZ = worldBuffer[a * Renderer.CLIP_STRIDE + 2];
-            float bX = worldBuffer[b * Renderer.CLIP_STRIDE];
-            float bY = worldBuffer[b * Renderer.CLIP_STRIDE + 1];
-            float bZ = worldBuffer[b * Renderer.CLIP_STRIDE + 2];
-            float cX = worldBuffer[c * Renderer.CLIP_STRIDE];
-            float cY = worldBuffer[c * Renderer.CLIP_STRIDE + 1];
-            float cZ = worldBuffer[c * Renderer.CLIP_STRIDE + 2];
+            float x = worldBuffer[i * Renderer.CLIP_STRIDE];
+            float y = worldBuffer[i * Renderer.CLIP_STRIDE + 1];
+            float z = worldBuffer[i * Renderer.CLIP_STRIDE + 2];
 
-            float lightX = currScene.light.getPosition()[0];
-            float lightY = currScene.light.getPosition()[1];
-            float lightZ = currScene.light.getPosition()[2];
 
-            float aToLightX = lightX - aX;
-            float aToLightY = lightY - aY;
-            float aToLightZ = lightZ - aZ;
-            float bToLightX = lightX - bX;
-            float bToLightY = lightY - bY;
-            float bToLightZ = lightZ - bZ;
-            float cToLightX = lightX - cX;
-            float cToLightY = lightY - cY;
-            float cToLightZ = lightZ - cZ;
+            float vertexToLightX = lightX - x;
+            float vertexToLightY = lightY - y;
+            float vertexToLightZ = lightZ - z;
 
-            float normA = (float) Math.sqrt(aToLightX * aToLightX + aToLightY * aToLightY + aToLightZ * aToLightZ);
-            aToLightX /= normA;
-            aToLightY /= normA;
-            aToLightZ /= normA;
-            float normB = (float) Math.sqrt(bToLightX * bToLightX + bToLightY * bToLightY + bToLightZ * bToLightZ);
-            bToLightX /= normB;
-            bToLightY /= normB;
-            bToLightZ /= normB;
-            float normC = (float) Math.sqrt(cToLightX * cToLightX + cToLightY * cToLightY + cToLightZ * cToLightZ);
-            cToLightX /= normC;
-            cToLightY /= normC;
-            cToLightZ /= normC;
+            float vertexToLightNorm = (float) Math.sqrt(vertexToLightX * vertexToLightX + vertexToLightY * vertexToLightY + vertexToLightZ * vertexToLightZ);
+            vertexToLightX /= vertexToLightNorm;
+            vertexToLightY /= vertexToLightNorm;
+            vertexToLightZ /= vertexToLightNorm;
 
-            float diffuseDotA = aToLightX * nAx + aToLightY * nAy + aToLightZ * nAz;
+            float diffuseDot = vertexToLightX * nx + vertexToLightY * ny + vertexToLightZ * nz;
 
-            float lightToAX = -aToLightX, lightToAY = -aToLightY, lightToAZ = -aToLightZ;
-            float dotLightNormal = -diffuseDotA;
+            float lightToX = -vertexToLightX, lightToY = -vertexToLightY, lightToZ = -vertexToLightZ;
+            float dotLightNormal = -diffuseDot;
             //reflection pointing out of vertex
-            float reflectionX = lightToAX - 2 * dotLightNormal * nAx;
-            float reflectionY = lightToAY - 2 * dotLightNormal * nAy;
-            float reflectionZ = lightToAZ - 2 * dotLightNormal * nAz;
+            float reflectionX = lightToX - 2 * dotLightNormal * nx;
+            float reflectionY = lightToY - 2 * dotLightNormal * ny;
+            float reflectionZ = lightToZ - 2 * dotLightNormal * nz;
 
             //cam to vertex
-            float aToViewX = currCam.transform.position[0] - aX;
-            float aToViewY = currCam.transform.position[1] - aY;
-            float aToViewZ = currCam.transform.position[2] - aZ;
-            float aToViewNorm = (float) Math.sqrt(aToViewX * aToViewX + aToViewY * aToViewY + aToViewZ * aToViewZ);
-            aToViewX /= aToViewNorm;
-            aToViewY /= aToViewNorm;
-            aToViewZ /= aToViewNorm;
+            float vertexToViewX = currCam.transform.position[0] - x;
+            float vertexToViewY = currCam.transform.position[1] - y;
+            float vertexToViewZ = currCam.transform.position[2] - z;
+            float vertexToViewNorm = (float) Math.sqrt(vertexToViewX * vertexToViewX + vertexToViewY * vertexToViewY + vertexToViewZ * vertexToViewZ);
+            vertexToViewX /= vertexToViewNorm;
+            vertexToViewY /= vertexToViewNorm;
+            vertexToViewZ /= vertexToViewNorm;
 
-            float specDotA = aToViewX * reflectionX + aToViewY * reflectionY + aToViewZ * reflectionZ;
+            float specDot = vertexToViewX * reflectionX + vertexToViewY * reflectionY + vertexToViewZ * reflectionZ;
 
-            float specularA = (float) Math.pow(Math.max(specDotA, 0f), 32);
-            float diffuseA = (float) Math.max(diffuseDotA, 0f);
+            float specular = (float) Math.pow(Math.max(specDot, 0f), currEntity.material.shininess);
+            float diffuse = (float) Math.max(diffuseDot, 0f);
 
-            float diffuseIntensityA = diffuseA * currEntity.material.diffuseStrength;
-            float specularIntensityA = (float) Math.pow(Math.max(0f, specDotA), currEntity.material.shininess) * currEntity.material.specularStrength;
-            float ambientIntensityA = 1f * currEntity.material.ambientStrength;
-            float intensityA = Math.min(ambientIntensityA + diffuseIntensityA + specularIntensityA, 1.0f);
+            float diffuseIntensity = diffuse * currEntity.material.diffuseStrength;
+            float specularIntensity = (float) specular * currEntity.material.specularStrength;
+            float ambientIntensity = 1f * currEntity.material.ambientStrength;
+            float intensity = Math.min(ambientIntensity + diffuseIntensity + specularIntensity, 1.0f);
 
-            float diffuseDotB = bToLightX * nBx + bToLightY * nBy + bToLightZ * nBz;
-
-            float lightToBX = -bToLightX, lightToBY = -bToLightY, lightToBZ = -bToLightZ;
-            float dotLightNormalB = -diffuseDotB;
-            float reflectionBX = lightToBX - 2 * dotLightNormalB * nBx;
-            float reflectionBY = lightToBY - 2 * dotLightNormalB * nBy;
-            float reflectionBZ = lightToBZ - 2 * dotLightNormalB * nBz;
-
-            float bToViewX = currCam.transform.position[0] - bX;
-            float bToViewY = currCam.transform.position[1] - bY;
-            float bToViewZ = currCam.transform.position[2] - bZ;
-            float bToViewNorm = (float) Math.sqrt(bToViewX * bToViewX + bToViewY * bToViewY + bToViewZ * bToViewZ);
-            bToViewX /= bToViewNorm;
-            bToViewY /= bToViewNorm;
-            bToViewZ /= bToViewNorm;
-
-            float specDotB = bToViewX * reflectionBX + bToViewY * reflectionBY + bToViewZ * reflectionBZ;
-
-            float diffuseB = Math.max(diffuseDotB, 0f);
-
-            float diffuseIntensityB = diffuseB * currEntity.material.diffuseStrength;
-            float specularIntensityB = (float) Math.pow(Math.max(0f, specDotB), currEntity.material.shininess) * currEntity.material.specularStrength;
-            float ambientIntensityB = 1f * currEntity.material.ambientStrength;
-            float intensityB = Math.min(ambientIntensityB + diffuseIntensityB + specularIntensityB, 1.0f);
-
-
-            float diffuseDotC = cToLightX * nCx + cToLightY * nCy + cToLightZ * nCz;
-
-            float lightToCX = -cToLightX, lightToCY = -cToLightY, lightToCZ = -cToLightZ;
-            float dotLightNormalC = -diffuseDotC;
-            float reflectionCX = lightToCX - 2 * dotLightNormalC * nCx;
-            float reflectionCY = lightToCY - 2 * dotLightNormalC * nCy;
-            float reflectionCZ = lightToCZ - 2 * dotLightNormalC * nCz;
-
-            float cToViewX = currCam.transform.position[0] - cX;
-            float cToViewY = currCam.transform.position[1] - cY;
-            float cToViewZ = currCam.transform.position[2] - cZ;
-            float cToViewNorm = (float) Math.sqrt(cToViewX * cToViewX + cToViewY * cToViewY + cToViewZ * cToViewZ);
-            cToViewX /= cToViewNorm;
-            cToViewY /= cToViewNorm;
-            cToViewZ /= cToViewNorm;
-
-            float specDotC = cToViewX * reflectionCX + cToViewY * reflectionCY + cToViewZ * reflectionCZ;
-
-            float diffuseC = Math.max(diffuseDotC, 0f);
-
-            float diffuseIntensityC = diffuseC * currEntity.material.diffuseStrength;
-            float specularIntensityC = (float) Math.pow(Math.max(0f, specDotC), currEntity.material.shininess) * currEntity.material.specularStrength;
-            float ambientIntensityC = 1f * currEntity.material.ambientStrength;
-            float intensityC = Math.min(ambientIntensityC + diffuseIntensityC + specularIntensityC, 1.0f);
-
-            out[i * TRIANGLE_VERTICES_LIGHT_STRIDE] = intensityA;
-            out[i * TRIANGLE_VERTICES_LIGHT_STRIDE + 1] = intensityB;
-            out[i * TRIANGLE_VERTICES_LIGHT_STRIDE + 2] = intensityC;
+            out[i] = intensity;
         }
     }
 
@@ -476,17 +393,17 @@ public class SolidRenderer {
 
 //            float parentDiffusion = 0, parentSpecular = 0;
             float parentIntensity = 0;
-            float parentIntensityA = 0;
-            float parentIntensityB = 0;
-            float parentIntensityC = 0;
+//            float parentIntensityA = 0;
+//            float parentIntensityB = 0;
+//            float parentIntensityC = 0;
             if (currScene.hasLight()) {
                 if (currScene.lightingType == LightingType.FLAT)
                     parentIntensity = triangleLightBuffer[i];
-                else if (currScene.lightingType == LightingType.GOURAUD) {
-                    parentIntensityA = triangleVerticesLightBuffer[i * TRIANGLE_VERTICES_LIGHT_STRIDE];
-                    parentIntensityB = triangleVerticesLightBuffer[i * TRIANGLE_VERTICES_LIGHT_STRIDE + 1];
-                    parentIntensityC = triangleVerticesLightBuffer[i * TRIANGLE_VERTICES_LIGHT_STRIDE + 2];
-                }
+//                else if (currScene.lightingType == LightingType.GOURAUD) {
+//                    parentIntensityA = vertexLightBuffer[a];
+//                    parentIntensityB = vertexLightBuffer[b];
+//                    parentIntensityC = vertexLightBuffer[c];
+//                }
             }
 
             for (int j = 1; j < polyVertexCount - 1; j++) {
@@ -499,9 +416,9 @@ public class SolidRenderer {
                     if (currScene.lightingType == LightingType.FLAT)
                         lightOut[postClipTriangleCount] = parentIntensity;
                     else if (currScene.lightingType == LightingType.GOURAUD) {
-                        lightOut[postClipTriangleCount * TRIANGLE_VERTICES_LIGHT_STRIDE] = parentIntensityA;
-                        lightOut[postClipTriangleCount * TRIANGLE_VERTICES_LIGHT_STRIDE + 1] = parentIntensityB;
-                        lightOut[postClipTriangleCount * TRIANGLE_VERTICES_LIGHT_STRIDE + 2] = parentIntensityC;
+                        lightOut[postClipTriangleCount * TRIANGLE_VERTICES_LIGHT_STRIDE] = vertexLightBuffer[polyIn[0]];
+                        lightOut[postClipTriangleCount * TRIANGLE_VERTICES_LIGHT_STRIDE + 1] = vertexLightBuffer[polyIn[j]];
+                        lightOut[postClipTriangleCount * TRIANGLE_VERTICES_LIGHT_STRIDE + 2] = vertexLightBuffer[polyIn[j + 1]];
                     }
                 }
                 postClipTriangleCount++;
@@ -565,12 +482,14 @@ public class SolidRenderer {
                 float d1 = clipBuffer[i1 + 3] + sign * clipBuffer[i1 + component];
                 float d2 = clipBuffer[i2 + 3] + sign * clipBuffer[i2 + component];
 
-                float t1 = d1 / (d1 - d2);
+                float t = d1 / (d1 - d2);
 
-                clipBuffer[totalVertices * Renderer.CLIP_STRIDE] = clipBuffer[i1] + t1 * (clipBuffer[i2] - clipBuffer[i1]);
-                clipBuffer[totalVertices * Renderer.CLIP_STRIDE + 1] = clipBuffer[i1 + 1] + t1 * (clipBuffer[i2 + 1] - clipBuffer[i1 + 1]);
-                clipBuffer[totalVertices * Renderer.CLIP_STRIDE + 2] = clipBuffer[i1 + 2] + t1 * (clipBuffer[i2 + 2] - clipBuffer[i1 + 2]);
-                clipBuffer[totalVertices * Renderer.CLIP_STRIDE + 3] = clipBuffer[i1 + 3] + t1 * (clipBuffer[i2 + 3] - clipBuffer[i1 + 3]);
+                clipBuffer[totalVertices * Renderer.CLIP_STRIDE] = clipBuffer[i1] + t * (clipBuffer[i2] - clipBuffer[i1]);
+                clipBuffer[totalVertices * Renderer.CLIP_STRIDE + 1] = clipBuffer[i1 + 1] + t * (clipBuffer[i2 + 1] - clipBuffer[i1 + 1]);
+                clipBuffer[totalVertices * Renderer.CLIP_STRIDE + 2] = clipBuffer[i1 + 2] + t * (clipBuffer[i2 + 2] - clipBuffer[i1 + 2]);
+                clipBuffer[totalVertices * Renderer.CLIP_STRIDE + 3] = clipBuffer[i1 + 3] + t * (clipBuffer[i2 + 3] - clipBuffer[i1 + 3]);
+
+                vertexLightBuffer[totalVertices] = vertexLightBuffer[edgeIdx1] + t * (vertexLightBuffer[edgeIdx2] - vertexLightBuffer[edgeIdx1]);
 
                 if (firstInside) {
                     polyOut[outCount++] = totalVertices;
@@ -592,7 +511,7 @@ public class SolidRenderer {
 
 
         float intensity1 = 0, intensity2 = 0, intensity3 = 0;
-        if (currScene.hasLight() && currScene.lightingType == LightingType.GOURAUD) {
+        if (!currEntity.isLightObj && currScene.hasLight() && currScene.lightingType == LightingType.GOURAUD) {
             intensity1 = postClipTriangleLightBuffer[idx * TRIANGLE_VERTICES_LIGHT_STRIDE];
             intensity2 = postClipTriangleLightBuffer[idx * TRIANGLE_VERTICES_LIGHT_STRIDE + 1];
             intensity3 = postClipTriangleLightBuffer[idx * TRIANGLE_VERTICES_LIGHT_STRIDE + 2];
@@ -667,9 +586,7 @@ public class SolidRenderer {
 
         /* here we know that aY <= bY <= cY */
         /* check for trivial case of bottom-flat triangle */
-        if (currScene.hasLight() && currScene.lightingType == LightingType.GOURAUD) {
-
-//            System.out.println("ba");
+        if (!currEntity.isLightObj && currScene.hasLight() && currScene.lightingType == LightingType.GOURAUD) {
             if (bY == cY) {
 
                 fillBottomFlatTriangle(color, intensityA, aX, aY, aInvW, intensityB, bX, bY, bInvW, intensityC, cX, cY, cInvW);
@@ -903,7 +820,7 @@ public class SolidRenderer {
 
     private Color getRenderColor(RenderOptions options, int idx) {
 
-        if (currEntity.isLightObj || !currScene.hasLight() || currScene.lightingType != LightingType.FLAT)
+        if (currEntity.isLightObj || !currScene.hasLight() || currScene.lightingType == LightingType.GOURAUD)
             return currEntity.color;
 
 
