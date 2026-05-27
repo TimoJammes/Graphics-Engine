@@ -27,8 +27,11 @@ public class ObjLoader {
         public float[] vertices;
         public float[] normals;
         public float[] uvs;
-        public int[]   indices;
-        public Color   color = DEFAULT_COLOR;
+        public int[] indices;
+        public Color ambient;
+        public Color diffuse;
+        public Color specular;
+        public float shininess = -1f;
 
         public boolean hasNormals() { return normals.length > 0; }
         public boolean hasUVs()     { return uvs.length > 0; }
@@ -36,12 +39,11 @@ public class ObjLoader {
         @Override
         public String toString() {
             return String.format(
-                "ObjLoader.Result { vertices: %d, normals: %d, uvs: %d, indices: %d, color: %s }",
+                "ObjLoader.Result { vertices: %d, normals: %d, uvs: %d, indices: %d }",
                 vertices.length / 3,
                 normals.length  / 3,
                 uvs.length      / 2,
-                indices.length  / 3,
-                color.toString()
+                indices.length  / 3
             );
         }
     }
@@ -152,7 +154,7 @@ public class ObjLoader {
 
         if (mtlFile != null) {
             String mtlPath = parentDir(path) + mtlFile;
-            result.color = parseMtl(mtlPath, activeMaterial);
+            parseMtl(mtlPath, activeMaterial, result);
         }
 
         return result;
@@ -162,15 +164,14 @@ public class ObjLoader {
      * Parses a .mtl file and returns the diffuse color (Kd) of the given material.
      * Falls back to white if the material or Kd is not found.
      */
-    private static Color parseMtl(String mtlPath, String targetMaterial) {
+    private static void parseMtl(String mtlPath, String targetMaterial, Result result) {
         if (!Gdx.files.internal(mtlPath).exists()) {
             System.out.println("File not found: " + mtlPath);
-            return DEFAULT_COLOR;
-
+            return;
         }
         try (BufferedReader br = new BufferedReader(Gdx.files.internal(mtlPath).reader())) {
             String line;
-            boolean inTarget = (targetMaterial == null); // no usemtl → take first Kd
+            boolean inTarget = (targetMaterial == null);
 
             while ((line = br.readLine()) != null) {
                 line = line.trim();
@@ -179,19 +180,28 @@ public class ObjLoader {
                     String name = line.substring(7).trim();
                     inTarget = targetMaterial == null || name.equals(targetMaterial);
 
+                } else if (inTarget && line.startsWith("Ka ")) {
+                    String[] t = line.split("\\s+");
+                    result.ambient = new Color();
+                    result.ambient.set(Float.parseFloat(t[1]), Float.parseFloat(t[2]), Float.parseFloat(t[3]), 1f);
+
                 } else if (inTarget && line.startsWith("Kd ")) {
                     String[] t = line.split("\\s+");
-                    float r = Float.parseFloat(t[1]);
-                    float g = Float.parseFloat(t[2]);
-                    float b = Float.parseFloat(t[3]);
-                    return new Color(r, g, b, 1f);
+                    result.diffuse = new Color();
+                    result.diffuse.set(Float.parseFloat(t[1]), Float.parseFloat(t[2]), Float.parseFloat(t[3]), 1f);
+
+                } else if (inTarget && line.startsWith("Ks ")) {
+                    String[] t = line.split("\\s+");
+                    result.specular = new Color();
+                    result.specular.set(Float.parseFloat(t[1]), Float.parseFloat(t[2]), Float.parseFloat(t[3]), 1f);
+
+                } else if (inTarget && line.startsWith("Ns ")) {
+                    result.shininess = Float.parseFloat(line.split("\\s+")[1]) / 1000f * 128f;
                 }
             }
         } catch (IOException e) {
             System.err.println("ObjLoader: could not read .mtl: " + mtlPath);
         }
-
-        return DEFAULT_COLOR;
     }
 
     /** "models/cube.obj" → "models/"  |  "cube.obj" → "" */
