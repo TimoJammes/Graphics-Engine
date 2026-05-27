@@ -2,14 +2,12 @@ package com.engine;
 
 import com.badlogic.gdx.graphics.Color;
 
-import java.util.Arrays;
-
 public class SolidRenderer {
 
     private static final RenderOptions DEFAULT_RENDER_OPTIONS = new RenderOptions();
     private static final float WIRE_FRAME_DEPTH_EPSILON = 1e-5f;
     private static final int WORLD_STRIDE = 3;
-//    private static final int LIGHT_BUFFER_STRIDE = 2;
+    private static final int TRIANGLE_VERTICES_LIGHT_STRIDE = 3;
     private final FrameBuffer frameBuffer;
     /**
      * stores clip-space vertices
@@ -18,7 +16,8 @@ public class SolidRenderer {
     private float[] worldBuffer;
     private float[] worldNormalsBuffer;
 
-    private float[] triangleLightBuffer;
+    private float[] triangleLightBuffer; //flat face shading
+    private float[] triangleVerticesLightBuffer; //gouraud shading
     /**
      * stores indices of non-culled triangles (each index points to the first index of a triangle in indices)
      */
@@ -67,8 +66,14 @@ public class SolidRenderer {
 
         if (currScene.hasLight()) {
             worldNormalsBuffer = new float[currentMaxVertices * WORLD_STRIDE];
-            triangleLightBuffer = new float[currentMaxVertices * 2 * 2];
-            postClipTriangleLightBuffer = new float[currentMaxVertices * 2 * 7 * 3];
+//            if (currScene.lightingType == LightingType.FLAT) {
+                triangleLightBuffer = new float[currentMaxVertices * 2];
+//                postClipTriangleLightBuffer = new float[currentMaxVertices * 2 * 7];
+//            }
+//            else if  (currScene.lightingType == LightingType.GOURAUD) {
+                triangleVerticesLightBuffer = new float[currentMaxVertices * 2 * 3];
+                postClipTriangleLightBuffer = new float[currentMaxVertices * 2 * 7 * 3];
+//            }
         }
     }
 
@@ -120,7 +125,13 @@ public class SolidRenderer {
 
 
         if (currScene.hasLight() && currEntity.hasNormals)
-            computeFlatLighting(triangleCount, indices, triangleLightBuffer);
+
+            if (currScene.lightingType ==  LightingType.FLAT) {
+                computeFlatLighting(triangleCount, indices, triangleLightBuffer);
+            }
+            else if (currScene.lightingType == LightingType.GOURAUD) {
+                computeGouraudLighting(triangleCount, indices, triangleVerticesLightBuffer);
+            }
         else {
 //            for (int i = 0; i < triangleCount; i++) {
 //                //set diffusion to 1, spectral to 0 (no light)
@@ -147,13 +158,13 @@ public class SolidRenderer {
 
         computeScreenVertices(postClipTriangleCount, screenBuffer);
 
-        displayTriangles(options, currEntity.color, postClipTriangleCount);
+        displayTriangles(options, postClipTriangleCount);
 
         currEntity = null;
     }
 
 
-    private void displayTriangles(RenderOptions options, Color baseColor, int postClipTriangleCount) {
+    private void displayTriangles(RenderOptions options, int postClipTriangleCount) {
         for (int i = 0; i < postClipTriangleCount; i++) {
 
             int screenX1 = (int) screenBuffer[i * 3 * 3];
@@ -173,8 +184,9 @@ public class SolidRenderer {
                 screenX3 >= 0 && screenX3 < Main.SCREEN_WIDTH &&
                 screenY3 >= 0 && screenY3 < Main.SCREEN_HEIGHT) : "illegal screen pos";
 
-            Color color = getRenderColor(options, baseColor, i);
-            rasterizeTriangle(options, color, screenX1, screenY1, invW1, screenX2, screenY2, invW2, screenX3, screenY3, invW3);
+            Color color = getRenderColor(options, i);
+            rasterizeTriangle(options, color, i, screenX1, screenY1, invW1, screenX2, screenY2, invW2, screenX3, screenY3, invW3);
+
         }
     }
 
@@ -196,14 +208,14 @@ public class SolidRenderer {
             float n3z = worldNormalsBuffer[c * WORLD_STRIDE + 2];
 
             //triangle surface normal
-            float nx = (n1x + n2x + n3x) / 3f;
-            float ny = (n1y + n2y + n3y) / 3f;
-            float nz = (n1z + n2z + n3z) / 3f;
+            float surfaceNormalX = (n1x + n2x + n3x) / 3f;
+            float surfaceNormalY = (n1y + n2y + n3y) / 3f;
+            float surfaceNormalZ = (n1z + n2z + n3z) / 3f;
 
-            float len = (float) Math.sqrt(nx * nx + ny * ny + nz * nz);
-            nx /= len;
-            ny /= len;
-            nz /= len;
+            float len = (float) Math.sqrt(surfaceNormalX * surfaceNormalX + surfaceNormalY * surfaceNormalY + surfaceNormalZ * surfaceNormalZ);
+            surfaceNormalX /= len;
+            surfaceNormalY /= len;
+            surfaceNormalZ /= len;
 
             float baryX = (worldBuffer[a * Renderer.CLIP_STRIDE] + worldBuffer[b * Renderer.CLIP_STRIDE] + worldBuffer[c * Renderer.CLIP_STRIDE]) / 3f;
             float baryY = (worldBuffer[a * Renderer.CLIP_STRIDE + 1] + worldBuffer[b * Renderer.CLIP_STRIDE + 1] + worldBuffer[c * Renderer.CLIP_STRIDE + 1]) / 3f;
@@ -213,32 +225,34 @@ public class SolidRenderer {
             float lightY = currScene.light.getPosition()[1];
             float lightZ = currScene.light.getPosition()[2];
 
-            float dirX = lightX - baryX;
-            float dirY = lightY - baryY;
-            float dirZ = lightZ - baryZ;
+            float baryToLightX = lightX - baryX;
+            float baryToLightY = lightY - baryY;
+            float baryToLightZ = lightZ - baryZ;
 
-            float len2 = (float) Math.sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ);
-            dirX /= len2;
-            dirY /= len2;
-            dirZ /= len2;
+            float len2 = (float) Math.sqrt(baryToLightX * baryToLightX + baryToLightY * baryToLightY + baryToLightZ * baryToLightZ);
+            baryToLightX /= len2;
+            baryToLightY /= len2;
+            baryToLightZ /= len2;
 
-            float diffuseDot = dirX * nx + dirY * ny + dirZ * nz;
+            float diffuseDot = baryToLightX * surfaceNormalX + baryToLightY * surfaceNormalY + baryToLightZ * surfaceNormalZ;
 
-            float lx = -dirX, ly = -dirY, lz = -dirZ;
-            float dotLN = lx * nx + ly * ny + lz * nz;
-            float rx = lx - 2 * dotLN * nx;
-            float ry = ly - 2 * dotLN * ny;
-            float rz = lz - 2 * dotLN * nz;
+            float lightToBaryX = -baryToLightX, lightToBaryY = -baryToLightY, lightToBaryZ = -baryToLightZ;
+            float dotLightNormal = lightToBaryX * surfaceNormalX + lightToBaryY * surfaceNormalY + lightToBaryZ * surfaceNormalZ;
+            //reflection pointing out of surface
+            float reflectionX = lightToBaryX - 2 * dotLightNormal * surfaceNormalX;
+            float reflectionY = lightToBaryY - 2 * dotLightNormal * surfaceNormalY;
+            float reflectionZ = lightToBaryZ - 2 * dotLightNormal * surfaceNormalZ;
 
-            float vx = currCam.transform.position[0] - baryX;
-            float vy = currCam.transform.position[1] - baryY;
-            float vz = currCam.transform.position[2] - baryZ;
-            float vLen = (float) Math.sqrt(vx * vx + vy * vy + vz * vz);
-            vx /= vLen;
-            vy /= vLen;
-            vz /= vLen;
+            //cam to barycenter
+            float viewX = currCam.transform.position[0] - baryX;
+            float viewY = currCam.transform.position[1] - baryY;
+            float viewZ = currCam.transform.position[2] - baryZ;
+            float vLen = (float) Math.sqrt(viewX * viewX + viewY * viewY + viewZ * viewZ);
+            viewX /= vLen;
+            viewY /= vLen;
+            viewZ /= vLen;
 
-            float specDot = vx * rx + vy * ry + vz * rz;
+            float specDot = viewX * reflectionX + viewY * reflectionY + viewZ * reflectionZ;
             float specular = (float) Math.pow(Math.max(specDot, 0f), 32);
 
             float diffuseIntensity = Math.max(0f, diffuseDot) * currEntity.material.diffuseStrength;
@@ -246,7 +260,146 @@ public class SolidRenderer {
             float ambientIntensity = 1f * currEntity.material.ambientStrength;
 
             triangleLightBuffer[i] = Math.min(ambientIntensity + diffuseIntensity + specularIntensity, 1.0f);
+        }
+    }
 
+    void computeGouraudLighting(int triangleCount, int[] indices, float[] out) {
+        for (int i = 0; i < triangleCount; i++) {
+            int idx = triangleBuffer[i];
+            int a = indices[idx];
+            int b = indices[idx + 1];
+            int c = indices[idx + 2];
+
+            float nAx = worldNormalsBuffer[a * WORLD_STRIDE];
+            float nAy = worldNormalsBuffer[a * WORLD_STRIDE + 1];
+            float nAz = worldNormalsBuffer[a * WORLD_STRIDE + 2];
+            float nBx = worldNormalsBuffer[b * WORLD_STRIDE];
+            float nBy = worldNormalsBuffer[b * WORLD_STRIDE + 1];
+            float nBz = worldNormalsBuffer[b * WORLD_STRIDE + 2];
+            float nCx = worldNormalsBuffer[c * WORLD_STRIDE];
+            float nCy = worldNormalsBuffer[c * WORLD_STRIDE + 1];
+            float nCz = worldNormalsBuffer[c * WORLD_STRIDE + 2];
+
+
+            float aX = worldBuffer[a * Renderer.CLIP_STRIDE];
+            float aY = worldBuffer[a * Renderer.CLIP_STRIDE + 1];
+            float aZ = worldBuffer[a * Renderer.CLIP_STRIDE + 2];
+            float bX = worldBuffer[b * Renderer.CLIP_STRIDE];
+            float bY = worldBuffer[b * Renderer.CLIP_STRIDE + 1];
+            float bZ = worldBuffer[b * Renderer.CLIP_STRIDE + 2];
+            float cX = worldBuffer[c * Renderer.CLIP_STRIDE];
+            float cY = worldBuffer[c * Renderer.CLIP_STRIDE + 1];
+            float cZ = worldBuffer[c * Renderer.CLIP_STRIDE + 2];
+
+            float lightX = currScene.light.getPosition()[0];
+            float lightY = currScene.light.getPosition()[1];
+            float lightZ = currScene.light.getPosition()[2];
+
+            float aToLightX = lightX - aX;
+            float aToLightY = lightY - aY;
+            float aToLightZ = lightZ - aZ;
+            float bToLightX = lightX - bX;
+            float bToLightY = lightY - bY;
+            float bToLightZ = lightZ - bZ;
+            float cToLightX = lightX - cX;
+            float cToLightY = lightY - cY;
+            float cToLightZ = lightZ - cZ;
+
+            float normA = (float) Math.sqrt(aToLightX * aToLightX + aToLightY * aToLightY + aToLightZ * aToLightZ);
+            aToLightX /= normA;
+            aToLightY /= normA;
+            aToLightZ /= normA;
+            float normB = (float) Math.sqrt(bToLightX * bToLightX + bToLightY * bToLightY + bToLightZ * bToLightZ);
+            bToLightX /= normB;
+            bToLightY /= normB;
+            bToLightZ /= normB;
+            float normC = (float) Math.sqrt(cToLightX * cToLightX + cToLightY * cToLightY + cToLightZ * cToLightZ);
+            cToLightX /= normC;
+            cToLightY /= normC;
+            cToLightZ /= normC;
+
+            float diffuseDotA = aToLightX * nAx + aToLightY * nAy + aToLightZ * nAz;
+
+            float lightToAX = -aToLightX, lightToAY = -aToLightY, lightToAZ = -aToLightZ;
+            float dotLightNormal = -diffuseDotA;
+            //reflection pointing out of vertex
+            float reflectionX = lightToAX - 2 * dotLightNormal * nAx;
+            float reflectionY = lightToAY - 2 * dotLightNormal * nAy;
+            float reflectionZ = lightToAZ - 2 * dotLightNormal * nAz;
+
+            //cam to vertex
+            float aToViewX = currCam.transform.position[0] - aX;
+            float aToViewY = currCam.transform.position[1] - aY;
+            float aToViewZ = currCam.transform.position[2] - aZ;
+            float aToViewNorm = (float) Math.sqrt(aToViewX * aToViewX + aToViewY * aToViewY + aToViewZ * aToViewZ);
+            aToViewX /= aToViewNorm;
+            aToViewY /= aToViewNorm;
+            aToViewZ /= aToViewNorm;
+
+            float specDotA = aToViewX * reflectionX + aToViewY * reflectionY + aToViewZ * reflectionZ;
+
+            float specularA = (float) Math.pow(Math.max(specDotA, 0f), 32);
+            float diffuseA = (float) Math.max(diffuseDotA, 0f);
+
+            float diffuseIntensityA = diffuseA * currEntity.material.diffuseStrength;
+            float specularIntensityA = (float) Math.pow(Math.max(0f, specDotA), currEntity.material.shininess) * currEntity.material.specularStrength;
+            float ambientIntensityA = 1f * currEntity.material.ambientStrength;
+            float intensityA = Math.min(ambientIntensityA + diffuseIntensityA + specularIntensityA, 1.0f);
+
+            float diffuseDotB = bToLightX * nBx + bToLightY * nBy + bToLightZ * nBz;
+
+            float lightToBX = -bToLightX, lightToBY = -bToLightY, lightToBZ = -bToLightZ;
+            float dotLightNormalB = -diffuseDotB;
+            float reflectionBX = lightToBX - 2 * dotLightNormalB * nBx;
+            float reflectionBY = lightToBY - 2 * dotLightNormalB * nBy;
+            float reflectionBZ = lightToBZ - 2 * dotLightNormalB * nBz;
+
+            float bToViewX = currCam.transform.position[0] - bX;
+            float bToViewY = currCam.transform.position[1] - bY;
+            float bToViewZ = currCam.transform.position[2] - bZ;
+            float bToViewNorm = (float) Math.sqrt(bToViewX * bToViewX + bToViewY * bToViewY + bToViewZ * bToViewZ);
+            bToViewX /= bToViewNorm;
+            bToViewY /= bToViewNorm;
+            bToViewZ /= bToViewNorm;
+
+            float specDotB = bToViewX * reflectionBX + bToViewY * reflectionBY + bToViewZ * reflectionBZ;
+
+            float diffuseB = Math.max(diffuseDotB, 0f);
+
+            float diffuseIntensityB = diffuseB * currEntity.material.diffuseStrength;
+            float specularIntensityB = (float) Math.pow(Math.max(0f, specDotB), currEntity.material.shininess) * currEntity.material.specularStrength;
+            float ambientIntensityB = 1f * currEntity.material.ambientStrength;
+            float intensityB = Math.min(ambientIntensityB + diffuseIntensityB + specularIntensityB, 1.0f);
+
+
+            float diffuseDotC = cToLightX * nCx + cToLightY * nCy + cToLightZ * nCz;
+
+            float lightToCX = -cToLightX, lightToCY = -cToLightY, lightToCZ = -cToLightZ;
+            float dotLightNormalC = -diffuseDotC;
+            float reflectionCX = lightToCX - 2 * dotLightNormalC * nCx;
+            float reflectionCY = lightToCY - 2 * dotLightNormalC * nCy;
+            float reflectionCZ = lightToCZ - 2 * dotLightNormalC * nCz;
+
+            float cToViewX = currCam.transform.position[0] - cX;
+            float cToViewY = currCam.transform.position[1] - cY;
+            float cToViewZ = currCam.transform.position[2] - cZ;
+            float cToViewNorm = (float) Math.sqrt(cToViewX * cToViewX + cToViewY * cToViewY + cToViewZ * cToViewZ);
+            cToViewX /= cToViewNorm;
+            cToViewY /= cToViewNorm;
+            cToViewZ /= cToViewNorm;
+
+            float specDotC = cToViewX * reflectionCX + cToViewY * reflectionCY + cToViewZ * reflectionCZ;
+
+            float diffuseC = Math.max(diffuseDotC, 0f);
+
+            float diffuseIntensityC = diffuseC * currEntity.material.diffuseStrength;
+            float specularIntensityC = (float) Math.pow(Math.max(0f, specDotC), currEntity.material.shininess) * currEntity.material.specularStrength;
+            float ambientIntensityC = 1f * currEntity.material.ambientStrength;
+            float intensityC = Math.min(ambientIntensityC + diffuseIntensityC + specularIntensityC, 1.0f);
+
+            out[i * TRIANGLE_VERTICES_LIGHT_STRIDE] = intensityA;
+            out[i * TRIANGLE_VERTICES_LIGHT_STRIDE + 1] = intensityB;
+            out[i * TRIANGLE_VERTICES_LIGHT_STRIDE + 2] = intensityC;
         }
     }
 
@@ -323,21 +476,33 @@ public class SolidRenderer {
 
 //            float parentDiffusion = 0, parentSpecular = 0;
             float parentIntensity = 0;
+            float parentIntensityA = 0;
+            float parentIntensityB = 0;
+            float parentIntensityC = 0;
             if (currScene.hasLight()) {
-                parentIntensity = triangleLightBuffer[i];
-//                parentDiffusion = triangleLightBuffer[i * LIGHT_BUFFER_STRIDE];
-//                parentSpecular = triangleLightBuffer[i * LIGHT_BUFFER_STRIDE + 1];
+                if (currScene.lightingType == LightingType.FLAT)
+                    parentIntensity = triangleLightBuffer[i];
+                else if (currScene.lightingType == LightingType.GOURAUD) {
+                    parentIntensityA = triangleVerticesLightBuffer[i * TRIANGLE_VERTICES_LIGHT_STRIDE];
+                    parentIntensityB = triangleVerticesLightBuffer[i * TRIANGLE_VERTICES_LIGHT_STRIDE + 1];
+                    parentIntensityC = triangleVerticesLightBuffer[i * TRIANGLE_VERTICES_LIGHT_STRIDE + 2];
+                }
             }
 
             for (int j = 1; j < polyVertexCount - 1; j++) {
+                //read from polyIn because of last swap of polyOut and polyIn
                 out[postClipTriangleCount * 3] = polyIn[0];
                 out[postClipTriangleCount * 3 + 1] = polyIn[j];
                 out[postClipTriangleCount * 3 + 2] = polyIn[j + 1];
 
                 if (currScene.hasLight()) {
-                    lightOut[postClipTriangleCount] = parentIntensity;
-//                    lightOut[postClipTriangleCount * LIGHT_BUFFER_STRIDE] = parentDiffusion;
-//                    lightOut[postClipTriangleCount * LIGHT_BUFFER_STRIDE + 1] = parentSpecular;
+                    if (currScene.lightingType == LightingType.FLAT)
+                        lightOut[postClipTriangleCount] = parentIntensity;
+                    else if (currScene.lightingType == LightingType.GOURAUD) {
+                        lightOut[postClipTriangleCount * TRIANGLE_VERTICES_LIGHT_STRIDE] = parentIntensityA;
+                        lightOut[postClipTriangleCount * TRIANGLE_VERTICES_LIGHT_STRIDE + 1] = parentIntensityB;
+                        lightOut[postClipTriangleCount * TRIANGLE_VERTICES_LIGHT_STRIDE + 2] = parentIntensityC;
+                    }
                 }
                 postClipTriangleCount++;
 
@@ -423,50 +588,71 @@ public class SolidRenderer {
     }
 
     /*https://www.sunshine2k.de/coding/java/TriangleRasterization/TriangleRasterization.html*/
-    private void rasterizeTriangle(RenderOptions options, Color color, int v1X, int v1Y, float invW1, int v2X, int v2Y, float invW2, int v3X, int v3Y, float invW3) {
+    private void rasterizeTriangle(RenderOptions options, Color color, int idx, int v1X, int v1Y, float invW1, int v2X, int v2Y, float invW2, int v3X, int v3Y, float invW3) {
+
+
+        float intensity1 = 0, intensity2 = 0, intensity3 = 0;
+        if (currScene.hasLight() && currScene.lightingType == LightingType.GOURAUD) {
+            intensity1 = postClipTriangleLightBuffer[idx * TRIANGLE_VERTICES_LIGHT_STRIDE];
+            intensity2 = postClipTriangleLightBuffer[idx * TRIANGLE_VERTICES_LIGHT_STRIDE + 1];
+            intensity3 = postClipTriangleLightBuffer[idx * TRIANGLE_VERTICES_LIGHT_STRIDE + 2];
+        }
 
         //a top, b middle, c bottom vertex
         int aX = v1X, aY = v1Y;
         float aInvW = invW1;
+        float intensityA = intensity1;
         int bX = v2X, bY = v2Y;
         float bInvW = invW2;
+        float intensityB = intensity2;
         int cX = v3X, cY = v3Y;
         float cInvW = invW3;
+        float intensityC = intensity3;
         int tX, tY;
         float tInvW;
+        float tIntensity;
 
         if (aY > bY) {
             tX = aX;
             tY = aY;
             tInvW = aInvW;
+            tIntensity = intensityA;
             aX = bX;
             aY = bY;
             aInvW = bInvW;
+            intensityA = intensityB;
             bX = tX;
             bY = tY;
             bInvW = tInvW;
+            intensityB = tIntensity;
         }
         if (aY > cY) {
             tX = aX;
             tY = aY;
             tInvW = aInvW;
+            tIntensity = intensityA;
             aX = cX;
             aY = cY;
             aInvW = cInvW;
+            intensityA = intensityC;
             cX = tX;
             cY = tY;
             cInvW = tInvW;
+            intensityC = tIntensity;
         }
         if (bY > cY) {
             tX = bX;
             tY = bY;
             tInvW = bInvW;
+            tIntensity = intensityB;
             bX = cX;
             bY = cY;
             bInvW = cInvW;
+            intensityB = intensityC;
             cX = tX;
             cY = tY;
             cInvW = tInvW;
+            intensityC = tIntensity;
         }
 
         if (cY == aY) return;
@@ -476,19 +662,40 @@ public class SolidRenderer {
         int midX = (int) (aX + t * (cX - aX));
         float midInvW = aInvW + t * (cInvW - aInvW);
 
+        float intensityMid = intensityA + t * (intensityC - intensityA);
+
 
         /* here we know that aY <= bY <= cY */
         /* check for trivial case of bottom-flat triangle */
-        if (bY == cY) {
-            fillBottomFlatTriangle(color, aX, aY, aInvW, bX, bY, bInvW, cX, cY, cInvW);
-        }
-        /* check for trivial case of top-flat triangle */
-        else if (aY == bY) {
-            fillTopFlatTriangle(color, aX, aY, aInvW, bX, bY, bInvW, cX, cY, cInvW);
+        if (currScene.hasLight() && currScene.lightingType == LightingType.GOURAUD) {
+
+//            System.out.println("ba");
+            if (bY == cY) {
+
+                fillBottomFlatTriangle(color, intensityA, aX, aY, aInvW, intensityB, bX, bY, bInvW, intensityC, cX, cY, cInvW);
+            }
+            /* check for trivial case of top-flat triangle */
+            else if (aY == bY) {
+                fillTopFlatTriangle(color, intensityA, aX, aY, aInvW, intensityB, bX, bY, bInvW, intensityC, cX, cY, cInvW);
+            } else {
+                /* general case - split the triangle in a topflat and bottom-flat one */
+                fillBottomFlatTriangle(color, intensityA, aX, aY, aInvW, intensityB, bX, bY, bInvW, intensityMid, midX, bY, midInvW);
+                fillTopFlatTriangle(color, intensityB, bX, bY, bInvW, intensityMid, midX, bY, midInvW, intensityC, cX, cY, cInvW);
+            }
         } else {
-            /* general case - split the triangle in a topflat and bottom-flat one */
-            fillBottomFlatTriangle(color, aX, aY, aInvW, bX, bY, bInvW, midX, bY, midInvW);
-            fillTopFlatTriangle(color, bX, bY, bInvW, midX, bY, midInvW, cX, cY, cInvW);
+            if (bY == cY) {
+
+                fillBottomFlatTriangle(color, aX, aY, aInvW, bX, bY, bInvW, cX, cY, cInvW);
+            }
+            /* check for trivial case of top-flat triangle */
+            else if (aY == bY) {
+                fillTopFlatTriangle(color, aX, aY, aInvW, bX, bY, bInvW, cX, cY, cInvW);
+            } else {
+                /* general case - split the triangle in a topflat and bottom-flat one */
+                fillBottomFlatTriangle(color, aX, aY, aInvW, bX, bY, bInvW, midX, bY, midInvW);
+                fillTopFlatTriangle(color, bX, bY, bInvW, midX, bY, midInvW, cX, cY, cInvW);
+            }
+
         }
 
         if (options.showWireFrame) {
@@ -553,11 +760,40 @@ public class SolidRenderer {
         }
     }
 
+    private void fillBottomFlatTriangle(Color color, float intensity1, int v1X, int v1Y, float invW1, float intensity2, int v2X, int v2Y, float invW2, float intensity3, int v3X, int v3Y, float invW3) {
+        float invSlopeX1 = (float) (v2X - v1X) / (v2Y - v1Y);
+        float invSlopeX2 = (float) (v3X - v1X) / (v3Y - v1Y);
+        float invSlopeW1 = (invW2 - invW1) / (v2Y - v1Y);
+        float invSlopeW2 = (invW3 - invW1) / (v3Y - v1Y);
+
+        float invSlopeI1 = (intensity2 - intensity1) / (v2Y - v1Y);
+        float invSlopeI2 = (intensity3 - intensity1) / (v3Y - v1Y);
+
+        float curX1 = v1X;
+        float curX2 = v1X;
+        float curInvW1 = invW1;
+        float curInvW2 = invW1;
+        float curInvI1 = intensity1;
+        float curInvI2 = intensity1;
+
+        for (int scanlineY = v1Y; scanlineY <= v2Y; scanlineY++) {
+            drawHorizLine(color, (int) curX1, curInvW1, curInvI1, (int) curX2, curInvW2, curInvI2, scanlineY);
+
+            curX1 += invSlopeX1;
+            curX2 += invSlopeX2;
+            curInvW1 += invSlopeW1;
+            curInvW2 += invSlopeW2;
+            curInvI1 += invSlopeI1;
+            curInvI2 += invSlopeI2;
+        }
+    }
+
     private void fillTopFlatTriangle(Color color, int v1X, int v1Y, float invW1, int v2X, int v2Y, float invW2, int v3X, int v3Y, float invW3) {
         float invSlopeX1 = (float) (v3X - v1X) / (v3Y - v1Y);
         float invSlopeX2 = (float) (v3X - v2X) / (v3Y - v2Y);
         float invSlopeW1 = (invW3 - invW1) / (v3Y - v1Y);
         float invSlopeW2 = (invW3 - invW2) / (v3Y - v2Y);
+
 
         float curX1 = v3X;
         float curX2 = v3X;
@@ -570,6 +806,35 @@ public class SolidRenderer {
             curX2 -= invSlopeX2;
             curInvW1 -= invSlopeW1;
             curInvW2 -= invSlopeW2;
+        }
+    }
+
+    private void fillTopFlatTriangle(Color color, float intensity1, int v1X, int v1Y, float invW1, float intensity2, int v2X, int v2Y, float invW2, float intensity3, int v3X, int v3Y, float invW3) {
+        float invSlopeX1 = (float) (v3X - v1X) / (v3Y - v1Y);
+        float invSlopeX2 = (float) (v3X - v2X) / (v3Y - v2Y);
+        float invSlopeW1 = (invW3 - invW1) / (v3Y - v1Y);
+        float invSlopeW2 = (invW3 - invW2) / (v3Y - v2Y);
+
+        float invSlopeI1 = (intensity3 - intensity1) / (v3Y - v1Y);
+        float invSlopeI2 = (intensity3 - intensity2) / (v3Y - v2Y);
+
+
+        float curX1 = v3X;
+        float curX2 = v3X;
+        float curInvW1 = invW3;
+        float curInvW2 = invW3;
+        float curInvI1 = intensity3;
+        float curInvI2 = intensity3;
+
+        for (int scanlineY = v3Y; scanlineY > v1Y; scanlineY--) {
+            drawHorizLine(color, (int) curX1, curInvW1, curInvI1, (int) curX2, curInvW2, curInvI2, scanlineY);
+            curX1 -= invSlopeX1;
+            curX2 -= invSlopeX2;
+            curInvW1 -= invSlopeW1;
+            curInvW2 -= invSlopeW2;
+
+            curInvI1 -= invSlopeI1;
+            curInvI2 -= invSlopeI2;
         }
     }
 
@@ -602,30 +867,55 @@ public class SolidRenderer {
         }
     }
 
-    private Color getRenderColor(RenderOptions options, Color baseColor, int idx) {
+    private void drawHorizLine(Color color, int x1, float invW1, float invI1, int x2, float invW2, float invI2, int y) {
+        int xStart = Math.min(x1, x2);
+        int xEnd = Math.max(x1, x2);
 
-        if (currEntity.isLightObj || !currScene.hasLight())
-            return baseColor;
+        if (x1 > x2) {
+            float tmpW = invW1;
+            float tmpI = invI1;
+            invW1 = invW2;
+            invW2 = tmpW;
+            invI1 = invI2;
+            invI2 = tmpI;
+        }
 
-//        float ambientIntensity = 0.2f;
-//
-//        float diffuseIntensity = postClipTriangleLightBuffer[idx * LIGHT_BUFFER_STRIDE];
-//
-//        float specularStrength = .5f;
-//        float specularIntensity = specularStrength * postClipTriangleLightBuffer[idx * LIGHT_BUFFER_STRIDE + 1];
-//
-//        float intensity = Math.min(ambientIntensity + diffuseIntensity + specularIntensity, 1.0f);
+        float invWSlope = (xEnd > xStart) ? (invW2 - invW1) / (xEnd - xStart) : 0;
+        float invISlope = (xEnd > xStart) ? (invI2 - invI1) / (xEnd - xStart) : 0;
+        float curInvW = invW1;
+        float curInvI = invI1;
+
+        int yFlip = Main.SCREEN_HEIGHT - y - 1;
+
+        for (int x = xStart; x <= xEnd; x++) {
+
+            if (curInvW > frameBuffer.getDepth(x, yFlip)) {
+                byte r = (byte) (color.r * currScene.light.color.r * curInvI * 255);
+                byte g = (byte) (color.g * currScene.light.color.g * curInvI * 255);
+                byte b = (byte) (color.b * currScene.light.color.b * curInvI * 255);
+                frameBuffer.setDepth(x, yFlip, curInvW);
+                frameBuffer.setPixel(x, yFlip, r, g, b);
+            }
+            curInvW += invWSlope;
+            curInvI += invISlope;
+        }
+    }
+
+    private Color getRenderColor(RenderOptions options, int idx) {
+
+        if (currEntity.isLightObj || !currScene.hasLight() || currScene.lightingType != LightingType.FLAT)
+            return currEntity.color;
+
 
         float intensity = postClipTriangleLightBuffer[idx];
 
-        scratchColor.set(baseColor);
+        scratchColor.set(currEntity.color);
 
-        if (currScene.light == null)
-            return scratchColor.mul(intensity);
+        scratchColor.r *= currScene.light.color.r;
+        scratchColor.g *= currScene.light.color.g;
+        scratchColor.b *= currScene.light.color.b;
+        scratchColor.mul(intensity);
 
-        scratchColor.r *= currScene.light.color.r * intensity;
-        scratchColor.g *= currScene.light.color.g * intensity;
-        scratchColor.b *= currScene.light.color.b * intensity;
         return scratchColor;
 
 //        if (!options.randomizeTexture) {
