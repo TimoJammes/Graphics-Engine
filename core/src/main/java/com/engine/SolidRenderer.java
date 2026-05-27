@@ -7,7 +7,10 @@ public class SolidRenderer {
     private static final RenderOptions DEFAULT_RENDER_OPTIONS = new RenderOptions();
     private static final float WIRE_FRAME_DEPTH_EPSILON = 1e-5f;
     private static final int WORLD_STRIDE = 3;
-    private static final int TRIANGLE_VERTICES_LIGHT_STRIDE = 3;
+    private static final int TRIANGLE_LIGHT_STRIDE = 3; //for each component of triangle color
+    private static final int VERTEX_LIGHT_STRIDE = 3; //for each component of vertex color
+    private static final int POST_CLIP_TRIANGLE_LIGHT_STRIDE = 3; //for each component of vertex color
+
     private final FrameBuffer frameBuffer;
     /**
      * stores clip-space vertices
@@ -38,6 +41,18 @@ public class SolidRenderer {
     private int[] polyOut = new int[9];
 
     private final Color scratchColor = new Color();
+    private final Color scratchColorRaster1 = new Color();
+    private final Color scratchColorRaster2 = new Color();
+    private final Color scratchColorRaster3 = new Color();
+    private final Color scratchColorRaster4 = new Color();
+    //for fill___FlatTriangle
+    private final Color slopeColor1 = new Color();
+    private final Color slopeColor2 = new Color();
+    private final Color curColor1 = new Color();
+    private final Color curColor2 = new Color();
+    //for drawHorizLine
+    private final Color slopeColor = new Color();
+    private final Color curColor = new Color();
 
     private int vertexStride;
 
@@ -68,13 +83,13 @@ public class SolidRenderer {
         if (currScene.hasLight()) {
             worldNormalsBuffer = new float[currentMaxVertices * WORLD_STRIDE];
 //            if (currScene.lightingType == LightingType.FLAT) {
-            triangleLightBuffer = new float[currentMaxVertices * 2];
+            triangleLightBuffer = new float[currentMaxVertices * 2 * 3];
 //            }
 //            if (currScene.lightingType == LightingType.GOURAUD) {
-            vertexLightBuffer = new float[currentMaxVertices * 4];
+            vertexLightBuffer = new float[currentMaxVertices * 4 * 3];
 //            }
 //            else if  (currScene.lightingType == LightingType.GOURAUD) {
-            postClipTriangleLightBuffer = new float[currentMaxVertices * 2 * 3 * 7];
+            postClipTriangleLightBuffer = new float[currentMaxVertices * 2 * 3 * 3 * 7];
 //            }
         }
     }
@@ -235,6 +250,7 @@ public class SolidRenderer {
             baryToLightZ /= len2;
 
             float diffuseDot = baryToLightX * surfaceNormalX + baryToLightY * surfaceNormalY + baryToLightZ * surfaceNormalZ;
+            float diffuse = Math.max(0f, diffuseDot);
 
             float lightToBaryX = -baryToLightX, lightToBaryY = -baryToLightY, lightToBaryZ = -baryToLightZ;
             float dotLightNormal = lightToBaryX * surfaceNormalX + lightToBaryY * surfaceNormalY + lightToBaryZ * surfaceNormalZ;
@@ -255,11 +271,25 @@ public class SolidRenderer {
             float specDot = viewX * reflectionX + viewY * reflectionY + viewZ * reflectionZ;
             float specular = (float) Math.pow(Math.max(specDot, 0f), currEntity.material.shininess);
 
-            float diffuseIntensity = Math.max(0f, diffuseDot) * currEntity.material.diffuseStrength;
-            float specularIntensity = (float) specular * currEntity.material.specularStrength;
-            float ambientIntensity = 1f * currEntity.material.ambientStrength;
+            float diffuseColorR = currScene.light.diffuse.r * diffuse * currEntity.material.diffuse.r;
+            float diffuseColorG = currScene.light.diffuse.g * diffuse * currEntity.material.diffuse.g;
+            float diffuseColorB = currScene.light.diffuse.b * diffuse * currEntity.material.diffuse.b;
 
-            triangleLightBuffer[i] = Math.min(ambientIntensity + diffuseIntensity + specularIntensity, 1.0f);
+            float specularColorR = currScene.light.specular.r * specular * currEntity.material.specular.r;
+            float specularColorG = currScene.light.specular.g * specular * currEntity.material.specular.g;
+            float specularColorB = currScene.light.specular.b * specular * currEntity.material.specular.b;
+
+            float ambientColorR = currScene.light.ambient.r * currEntity.material.ambient.r;
+            float ambientColorG = currScene.light.ambient.g * currEntity.material.ambient.g;
+            float ambientColorB = currScene.light.ambient.b * currEntity.material.ambient.b;
+
+            float resultColorR = Math.min(diffuseColorR + specularColorR + ambientColorR, 1f);
+            float resultColorG = Math.min(diffuseColorG + specularColorG + ambientColorG, 1f);
+            float resultColorB = Math.min(diffuseColorB + specularColorB + ambientColorB, 1f);
+
+            out[i * TRIANGLE_LIGHT_STRIDE] = resultColorR;
+            out[i * TRIANGLE_LIGHT_STRIDE + 1] = resultColorG;
+            out[i * TRIANGLE_LIGHT_STRIDE + 2] = resultColorB;
         }
     }
 
@@ -309,14 +339,27 @@ public class SolidRenderer {
             float specDot = vertexToViewX * reflectionX + vertexToViewY * reflectionY + vertexToViewZ * reflectionZ;
 
             float specular = (float) Math.pow(Math.max(specDot, 0f), currEntity.material.shininess);
-            float diffuse = (float) Math.max(diffuseDot, 0f);
+            float diffuse = Math.max(diffuseDot, 0f);
 
-            float diffuseIntensity = diffuse * currEntity.material.diffuseStrength;
-            float specularIntensity = (float) specular * currEntity.material.specularStrength;
-            float ambientIntensity = 1f * currEntity.material.ambientStrength;
-            float intensity = Math.min(ambientIntensity + diffuseIntensity + specularIntensity, 1.0f);
+            float diffuseColorR = currScene.light.diffuse.r * diffuse * currEntity.material.diffuse.r;
+            float diffuseColorG = currScene.light.diffuse.g * diffuse * currEntity.material.diffuse.g;
+            float diffuseColorB = currScene.light.diffuse.b * diffuse * currEntity.material.diffuse.b;
 
-            out[i] = intensity;
+            float specularColorR = currScene.light.specular.r * specular * currEntity.material.specular.r;
+            float specularColorG = currScene.light.specular.g * specular * currEntity.material.specular.g;
+            float specularColorB = currScene.light.specular.b * specular * currEntity.material.specular.b;
+
+            float ambientColorR = currScene.light.ambient.r * currEntity.material.ambient.r;
+            float ambientColorG = currScene.light.ambient.g * currEntity.material.ambient.g;
+            float ambientColorB = currScene.light.ambient.b * currEntity.material.ambient.b;
+
+            float resultColorR = Math.min(diffuseColorR + specularColorR + ambientColorR, 1f);
+            float resultColorG = Math.min(diffuseColorG + specularColorG + ambientColorG, 1f);
+            float resultColorB = Math.min(diffuseColorB + specularColorB + ambientColorB, 1f);
+
+            out[i * VERTEX_LIGHT_STRIDE] = resultColorR;
+            out[i * VERTEX_LIGHT_STRIDE + 1] = resultColorG;
+            out[i * VERTEX_LIGHT_STRIDE + 2] = resultColorB;
         }
     }
 
@@ -392,13 +435,18 @@ public class SolidRenderer {
             if (polyVertexCount == 0) continue;  // fully outside
 
 //            float parentDiffusion = 0, parentSpecular = 0;
-            float parentIntensity = 0;
+            float parentColorR = 0;
+            float parentColorG = 0;
+            float parentColorB = 0;
 //            float parentIntensityA = 0;
 //            float parentIntensityB = 0;
 //            float parentIntensityC = 0;
             if (currScene.hasLight()) {
-                if (currScene.lightingType == LightingType.FLAT)
-                    parentIntensity = triangleLightBuffer[i];
+                if (currScene.lightingType == LightingType.FLAT) {
+                    parentColorR = triangleLightBuffer[i * TRIANGLE_LIGHT_STRIDE];
+                    parentColorG = triangleLightBuffer[i * TRIANGLE_LIGHT_STRIDE + 1];
+                    parentColorB = triangleLightBuffer[i * TRIANGLE_LIGHT_STRIDE + 2];
+                }
 //                else if (currScene.lightingType == LightingType.GOURAUD) {
 //                    parentIntensityA = vertexLightBuffer[a];
 //                    parentIntensityB = vertexLightBuffer[b];
@@ -413,12 +461,20 @@ public class SolidRenderer {
                 out[postClipTriangleCount * 3 + 2] = polyIn[j + 1];
 
                 if (currScene.hasLight()) {
-                    if (currScene.lightingType == LightingType.FLAT)
-                        lightOut[postClipTriangleCount] = parentIntensity;
-                    else if (currScene.lightingType == LightingType.GOURAUD) {
-                        lightOut[postClipTriangleCount * TRIANGLE_VERTICES_LIGHT_STRIDE] = vertexLightBuffer[polyIn[0]];
-                        lightOut[postClipTriangleCount * TRIANGLE_VERTICES_LIGHT_STRIDE + 1] = vertexLightBuffer[polyIn[j]];
-                        lightOut[postClipTriangleCount * TRIANGLE_VERTICES_LIGHT_STRIDE + 2] = vertexLightBuffer[polyIn[j + 1]];
+                    if (currScene.lightingType == LightingType.FLAT) {
+                        lightOut[postClipTriangleCount * TRIANGLE_LIGHT_STRIDE] = parentColorR;
+                        lightOut[postClipTriangleCount * TRIANGLE_LIGHT_STRIDE + 1] = parentColorG;
+                        lightOut[postClipTriangleCount * TRIANGLE_LIGHT_STRIDE + 2] = parentColorB;
+                    } else if (currScene.lightingType == LightingType.GOURAUD) {
+                        lightOut[(postClipTriangleCount * 3) * POST_CLIP_TRIANGLE_LIGHT_STRIDE] = vertexLightBuffer[polyIn[0] * VERTEX_LIGHT_STRIDE];
+                        lightOut[(postClipTriangleCount * 3) * POST_CLIP_TRIANGLE_LIGHT_STRIDE + 1] = vertexLightBuffer[polyIn[0] * VERTEX_LIGHT_STRIDE + 1];
+                        lightOut[(postClipTriangleCount * 3) * POST_CLIP_TRIANGLE_LIGHT_STRIDE + 2] = vertexLightBuffer[polyIn[0] * VERTEX_LIGHT_STRIDE + 2];
+                        lightOut[(postClipTriangleCount * 3 + 1) * POST_CLIP_TRIANGLE_LIGHT_STRIDE] = vertexLightBuffer[polyIn[j] * VERTEX_LIGHT_STRIDE];
+                        lightOut[(postClipTriangleCount * 3 + 1) * POST_CLIP_TRIANGLE_LIGHT_STRIDE + 1] = vertexLightBuffer[polyIn[j] * VERTEX_LIGHT_STRIDE + 1];
+                        lightOut[(postClipTriangleCount * 3 + 1) * POST_CLIP_TRIANGLE_LIGHT_STRIDE + 2] = vertexLightBuffer[polyIn[j] * VERTEX_LIGHT_STRIDE + 2];
+                        lightOut[(postClipTriangleCount * 3 + 2) * POST_CLIP_TRIANGLE_LIGHT_STRIDE] = vertexLightBuffer[polyIn[j + 1] * VERTEX_LIGHT_STRIDE];
+                        lightOut[(postClipTriangleCount * 3 + 2) * POST_CLIP_TRIANGLE_LIGHT_STRIDE + 1] = vertexLightBuffer[polyIn[j + 1] * VERTEX_LIGHT_STRIDE + 1];
+                        lightOut[(postClipTriangleCount * 3 + 2) * POST_CLIP_TRIANGLE_LIGHT_STRIDE + 2] = vertexLightBuffer[polyIn[j + 1] * VERTEX_LIGHT_STRIDE + 2];
                     }
                 }
                 postClipTriangleCount++;
@@ -489,8 +545,14 @@ public class SolidRenderer {
                 clipBuffer[totalVertices * Renderer.CLIP_STRIDE + 2] = clipBuffer[i1 + 2] + t * (clipBuffer[i2 + 2] - clipBuffer[i1 + 2]);
                 clipBuffer[totalVertices * Renderer.CLIP_STRIDE + 3] = clipBuffer[i1 + 3] + t * (clipBuffer[i2 + 3] - clipBuffer[i1 + 3]);
 
-                vertexLightBuffer[totalVertices] = vertexLightBuffer[edgeIdx1] + t * (vertexLightBuffer[edgeIdx2] - vertexLightBuffer[edgeIdx1]);
-
+                if (currScene.hasLight() && currScene.lightingType == LightingType.GOURAUD) {
+                    vertexLightBuffer[totalVertices * VERTEX_LIGHT_STRIDE] = vertexLightBuffer[edgeIdx1 * VERTEX_LIGHT_STRIDE] +
+                        t * (vertexLightBuffer[edgeIdx2 * VERTEX_LIGHT_STRIDE] - vertexLightBuffer[edgeIdx1 * VERTEX_LIGHT_STRIDE]);
+                    vertexLightBuffer[totalVertices * VERTEX_LIGHT_STRIDE + 1] = vertexLightBuffer[edgeIdx1 * VERTEX_LIGHT_STRIDE + 1] +
+                        t * (vertexLightBuffer[edgeIdx2 * VERTEX_LIGHT_STRIDE + 1] - vertexLightBuffer[edgeIdx1 * VERTEX_LIGHT_STRIDE + 1]);
+                    vertexLightBuffer[totalVertices * VERTEX_LIGHT_STRIDE + 2] = vertexLightBuffer[edgeIdx1 * VERTEX_LIGHT_STRIDE + 2] +
+                        t * (vertexLightBuffer[edgeIdx2 * VERTEX_LIGHT_STRIDE + 2] - vertexLightBuffer[edgeIdx1 * VERTEX_LIGHT_STRIDE + 2]);
+                }
                 if (firstInside) {
                     polyOut[outCount++] = totalVertices;
                 }
@@ -510,68 +572,85 @@ public class SolidRenderer {
     private void rasterizeTriangle(RenderOptions options, Color color, int idx, int v1X, int v1Y, float invW1, int v2X, int v2Y, float invW2, int v3X, int v3Y, float invW3) {
 
 
-        float intensity1 = 0, intensity2 = 0, intensity3 = 0;
+        Color color1 = scratchColorRaster1, color2 = scratchColorRaster2, color3 = scratchColorRaster3;
+
         if (!currEntity.isLightObj && currScene.hasLight() && currScene.lightingType == LightingType.GOURAUD) {
-            intensity1 = postClipTriangleLightBuffer[idx * TRIANGLE_VERTICES_LIGHT_STRIDE];
-            intensity2 = postClipTriangleLightBuffer[idx * TRIANGLE_VERTICES_LIGHT_STRIDE + 1];
-            intensity3 = postClipTriangleLightBuffer[idx * TRIANGLE_VERTICES_LIGHT_STRIDE + 2];
+            float color1R = postClipTriangleLightBuffer[(idx * 3) * POST_CLIP_TRIANGLE_LIGHT_STRIDE];
+            float color1G = postClipTriangleLightBuffer[(idx * 3) * POST_CLIP_TRIANGLE_LIGHT_STRIDE + 1];
+            float color1B = postClipTriangleLightBuffer[(idx * 3) * POST_CLIP_TRIANGLE_LIGHT_STRIDE + 2];
+            float color2R = postClipTriangleLightBuffer[(idx * 3 + 1) * POST_CLIP_TRIANGLE_LIGHT_STRIDE];
+            float color2G = postClipTriangleLightBuffer[(idx * 3 + 1) * POST_CLIP_TRIANGLE_LIGHT_STRIDE + 1];
+            float color2B = postClipTriangleLightBuffer[(idx * 3 + 1) * POST_CLIP_TRIANGLE_LIGHT_STRIDE + 2];
+            float color3R = postClipTriangleLightBuffer[(idx * 3 + 2) * POST_CLIP_TRIANGLE_LIGHT_STRIDE];
+            float color3G = postClipTriangleLightBuffer[(idx * 3 + 2) * POST_CLIP_TRIANGLE_LIGHT_STRIDE + 1];
+            float color3B = postClipTriangleLightBuffer[(idx * 3 + 2) * POST_CLIP_TRIANGLE_LIGHT_STRIDE + 2];
+
+            scratchColorRaster1.r = color1R;
+            scratchColorRaster1.g = color1G;
+            scratchColorRaster1.b = color1B;
+            scratchColorRaster2.r = color2R;
+            scratchColorRaster2.g = color2G;
+            scratchColorRaster2.b = color2B;
+            scratchColorRaster3.r = color3R;
+            scratchColorRaster3.g = color3G;
+            scratchColorRaster3.b = color3B;
         }
 
         //a top, b middle, c bottom vertex
         int aX = v1X, aY = v1Y;
         float aInvW = invW1;
-        float intensityA = intensity1;
+        Color colorA = color1;
         int bX = v2X, bY = v2Y;
         float bInvW = invW2;
-        float intensityB = intensity2;
+        Color colorB = color2;
         int cX = v3X, cY = v3Y;
         float cInvW = invW3;
-        float intensityC = intensity3;
+        Color colorC = color3;
         int tX, tY;
         float tInvW;
-        float tIntensity;
+        Color tColor;
 
         if (aY > bY) {
             tX = aX;
             tY = aY;
             tInvW = aInvW;
-            tIntensity = intensityA;
+            tColor = colorA;
             aX = bX;
             aY = bY;
             aInvW = bInvW;
-            intensityA = intensityB;
+            colorA = colorB;
             bX = tX;
             bY = tY;
             bInvW = tInvW;
-            intensityB = tIntensity;
+            colorB = tColor;
         }
         if (aY > cY) {
             tX = aX;
             tY = aY;
             tInvW = aInvW;
-            tIntensity = intensityA;
+            tColor = colorA;
             aX = cX;
             aY = cY;
             aInvW = cInvW;
-            intensityA = intensityC;
+            colorA = colorC;
             cX = tX;
             cY = tY;
             cInvW = tInvW;
-            intensityC = tIntensity;
+            colorC = tColor;
         }
         if (bY > cY) {
             tX = bX;
             tY = bY;
             tInvW = bInvW;
-            tIntensity = intensityB;
+            tColor = colorB;
             bX = cX;
             bY = cY;
             bInvW = cInvW;
-            intensityB = intensityC;
+            colorB = colorC;
             cX = tX;
             cY = tY;
             cInvW = tInvW;
-            intensityC = tIntensity;
+            colorC = tColor;
         }
 
         if (cY == aY) return;
@@ -581,7 +660,10 @@ public class SolidRenderer {
         int midX = (int) (aX + t * (cX - aX));
         float midInvW = aInvW + t * (cInvW - aInvW);
 
-        float intensityMid = intensityA + t * (intensityC - intensityA);
+        Color colorMid = scratchColorRaster4;
+        colorMid.r = colorA.r + t * (colorC.r - colorA.r);
+        colorMid.g = colorA.g + t * (colorC.g - colorA.g);
+        colorMid.b = colorA.b + t * (colorC.b - colorA.b);
 
 
         /* here we know that aY <= bY <= cY */
@@ -589,15 +671,15 @@ public class SolidRenderer {
         if (!currEntity.isLightObj && currScene.hasLight() && currScene.lightingType == LightingType.GOURAUD) {
             if (bY == cY) {
 
-                fillBottomFlatTriangle(color, intensityA, aX, aY, aInvW, intensityB, bX, bY, bInvW, intensityC, cX, cY, cInvW);
+                fillBottomFlatTriangle(colorA, aX, aY, aInvW, colorB, bX, bY, bInvW, colorC, cX, cY, cInvW);
             }
             /* check for trivial case of top-flat triangle */
             else if (aY == bY) {
-                fillTopFlatTriangle(color, intensityA, aX, aY, aInvW, intensityB, bX, bY, bInvW, intensityC, cX, cY, cInvW);
+                fillTopFlatTriangle(colorA, aX, aY, aInvW, colorB, bX, bY, bInvW, colorC, cX, cY, cInvW);
             } else {
                 /* general case - split the triangle in a topflat and bottom-flat one */
-                fillBottomFlatTriangle(color, intensityA, aX, aY, aInvW, intensityB, bX, bY, bInvW, intensityMid, midX, bY, midInvW);
-                fillTopFlatTriangle(color, intensityB, bX, bY, bInvW, intensityMid, midX, bY, midInvW, intensityC, cX, cY, cInvW);
+                fillBottomFlatTriangle(colorA, aX, aY, aInvW, colorB, bX, bY, bInvW, colorMid, midX, bY, midInvW);
+                fillTopFlatTriangle(colorB, bX, bY, bInvW, colorMid, midX, bY, midInvW, colorC, cX, cY, cInvW);
             }
         } else {
             if (bY == cY) {
@@ -677,31 +759,46 @@ public class SolidRenderer {
         }
     }
 
-    private void fillBottomFlatTriangle(Color color, float intensity1, int v1X, int v1Y, float invW1, float intensity2, int v2X, int v2Y, float invW2, float intensity3, int v3X, int v3Y, float invW3) {
-        float invSlopeX1 = (float) (v2X - v1X) / (v2Y - v1Y);
-        float invSlopeX2 = (float) (v3X - v1X) / (v3Y - v1Y);
-        float invSlopeW1 = (invW2 - invW1) / (v2Y - v1Y);
-        float invSlopeW2 = (invW3 - invW1) / (v3Y - v1Y);
+    private void fillBottomFlatTriangle(Color color1, int v1X, int v1Y, float invW1, Color color2, int v2X, int v2Y, float invW2, Color color3, int v3X, int v3Y, float invW3) {
+        float dY1 = (v2Y - v1Y);
+        float dY2 = (v3Y - v1Y);
 
-        float invSlopeI1 = (intensity2 - intensity1) / (v2Y - v1Y);
-        float invSlopeI2 = (intensity3 - intensity1) / (v3Y - v1Y);
+        float invSlopeX1 = (float) (v2X - v1X) / dY1;
+        float invSlopeX2 = (float) (v3X - v1X) / dY2;
+        float invSlopeW1 = (invW2 - invW1) / dY1;
+        float invSlopeW2 = (invW3 - invW1) / dY2;
+
+
+        slopeColor1.r = (color2.r - color1.r) / dY1;
+        slopeColor1.g = (color2.g - color1.g) / dY1;
+        slopeColor1.b = (color2.b - color1.b) / dY1;
+
+        slopeColor2.r = (color3.r - color1.r) / dY2;
+        slopeColor2.g = (color3.g - color1.g) / dY2;
+        slopeColor2.b = (color3.b - color1.b) / dY2;
 
         float curX1 = v1X;
         float curX2 = v1X;
         float curInvW1 = invW1;
         float curInvW2 = invW1;
-        float curInvI1 = intensity1;
-        float curInvI2 = intensity1;
+
+        curColor1.set(color1);
+        curColor2.set(color1);
 
         for (int scanlineY = v1Y; scanlineY <= v2Y; scanlineY++) {
-            drawHorizLine(color, (int) curX1, curInvW1, curInvI1, (int) curX2, curInvW2, curInvI2, scanlineY);
+            drawHorizLine((int) curX1, curInvW1, curColor1, (int) curX2, curInvW2, curColor2, scanlineY);
 
             curX1 += invSlopeX1;
             curX2 += invSlopeX2;
             curInvW1 += invSlopeW1;
             curInvW2 += invSlopeW2;
-            curInvI1 += invSlopeI1;
-            curInvI2 += invSlopeI2;
+
+            curColor1.r += slopeColor1.r;
+            curColor1.g += slopeColor1.g;
+            curColor1.b += slopeColor1.b;
+            curColor2.r += slopeColor2.r;
+            curColor2.g += slopeColor2.g;
+            curColor2.b += slopeColor2.b;
         }
     }
 
@@ -726,32 +823,44 @@ public class SolidRenderer {
         }
     }
 
-    private void fillTopFlatTriangle(Color color, float intensity1, int v1X, int v1Y, float invW1, float intensity2, int v2X, int v2Y, float invW2, float intensity3, int v3X, int v3Y, float invW3) {
+    private void fillTopFlatTriangle(Color color1, int v1X, int v1Y, float invW1, Color color2, int v2X, int v2Y, float invW2, Color color3, int v3X, int v3Y, float invW3) {
         float invSlopeX1 = (float) (v3X - v1X) / (v3Y - v1Y);
         float invSlopeX2 = (float) (v3X - v2X) / (v3Y - v2Y);
         float invSlopeW1 = (invW3 - invW1) / (v3Y - v1Y);
         float invSlopeW2 = (invW3 - invW2) / (v3Y - v2Y);
 
-        float invSlopeI1 = (intensity3 - intensity1) / (v3Y - v1Y);
-        float invSlopeI2 = (intensity3 - intensity2) / (v3Y - v2Y);
+        float dY1 = (v3Y - v1Y);
+        float dY2 = (v3Y - v2Y);
 
+        slopeColor1.r = (color3.r - color1.r) / dY1;
+        slopeColor1.g = (color3.g - color1.g) / dY1;
+        slopeColor1.b = (color3.b - color1.b) / dY1;
+
+        slopeColor2.r = (color3.r - color2.r) / dY2;
+        slopeColor2.g = (color3.g - color2.g) / dY2;
+        slopeColor2.b = (color3.b - color2.b) / dY2;
 
         float curX1 = v3X;
         float curX2 = v3X;
         float curInvW1 = invW3;
         float curInvW2 = invW3;
-        float curInvI1 = intensity3;
-        float curInvI2 = intensity3;
+
+        curColor1.set(color3);
+        curColor2.set(color3);
 
         for (int scanlineY = v3Y; scanlineY > v1Y; scanlineY--) {
-            drawHorizLine(color, (int) curX1, curInvW1, curInvI1, (int) curX2, curInvW2, curInvI2, scanlineY);
+            drawHorizLine((int) curX1, curInvW1, curColor1, (int) curX2, curInvW2, curColor2, scanlineY);
             curX1 -= invSlopeX1;
             curX2 -= invSlopeX2;
             curInvW1 -= invSlopeW1;
             curInvW2 -= invSlopeW2;
 
-            curInvI1 -= invSlopeI1;
-            curInvI2 -= invSlopeI2;
+            curColor1.r -= slopeColor1.r;
+            curColor1.g -= slopeColor1.g;
+            curColor1.b -= slopeColor1.b;
+            curColor2.r -= slopeColor2.r;
+            curColor2.g -= slopeColor2.g;
+            curColor2.b -= slopeColor2.b;
         }
     }
 
@@ -784,54 +893,58 @@ public class SolidRenderer {
         }
     }
 
-    private void drawHorizLine(Color color, int x1, float invW1, float invI1, int x2, float invW2, float invI2, int y) {
+    private void drawHorizLine(int x1, float invW1, Color color1, int x2, float invW2, Color color2, int y) {
         int xStart = Math.min(x1, x2);
         int xEnd = Math.max(x1, x2);
 
         if (x1 > x2) {
             float tmpW = invW1;
-            float tmpI = invI1;
+            Color tmpColor = color1;
             invW1 = invW2;
             invW2 = tmpW;
-            invI1 = invI2;
-            invI2 = tmpI;
+            color1 = color2;
+            color2 = tmpColor;
         }
 
         float invWSlope = (xEnd > xStart) ? (invW2 - invW1) / (xEnd - xStart) : 0;
-        float invISlope = (xEnd > xStart) ? (invI2 - invI1) / (xEnd - xStart) : 0;
+        slopeColor.r = (xEnd > xStart) ? (color2.r - color1.r) / (xEnd - xStart) : 0;
+        slopeColor.g = (xEnd > xStart) ? (color2.g - color1.g) / (xEnd - xStart) : 0;
+        slopeColor.b = (xEnd > xStart) ? (color2.b - color1.b) / (xEnd - xStart) : 0;
         float curInvW = invW1;
-        float curInvI = invI1;
+        curColor.set(color1);
 
         int yFlip = Main.SCREEN_HEIGHT - y - 1;
 
         for (int x = xStart; x <= xEnd; x++) {
 
             if (curInvW > frameBuffer.getDepth(x, yFlip)) {
-                byte r = (byte) (color.r * currScene.light.color.r * curInvI * 255);
-                byte g = (byte) (color.g * currScene.light.color.g * curInvI * 255);
-                byte b = (byte) (color.b * currScene.light.color.b * curInvI * 255);
+                byte r = (byte) (curColor.r * 255);
+                byte g = (byte) (curColor.g * 255);
+                byte b = (byte) (curColor.b * 255);
                 frameBuffer.setDepth(x, yFlip, curInvW);
                 frameBuffer.setPixel(x, yFlip, r, g, b);
             }
             curInvW += invWSlope;
-            curInvI += invISlope;
+            curColor.r += slopeColor.r;
+            curColor.g += slopeColor.g;
+            curColor.b += slopeColor.b;
         }
     }
 
     private Color getRenderColor(RenderOptions options, int idx) {
 
         if (currEntity.isLightObj || !currScene.hasLight() || currScene.lightingType == LightingType.GOURAUD)
-            return currEntity.color;
+            scratchColor.set(currEntity.material.diffuse);
+        else {
 
+            float triangleColorR = postClipTriangleLightBuffer[idx * POST_CLIP_TRIANGLE_LIGHT_STRIDE];
+            float triangleColorG = postClipTriangleLightBuffer[idx * POST_CLIP_TRIANGLE_LIGHT_STRIDE + 1];
+            float triangleColorB = postClipTriangleLightBuffer[idx * POST_CLIP_TRIANGLE_LIGHT_STRIDE + 2];
 
-        float intensity = postClipTriangleLightBuffer[idx];
-
-        scratchColor.set(currEntity.color);
-
-        scratchColor.r *= currScene.light.color.r;
-        scratchColor.g *= currScene.light.color.g;
-        scratchColor.b *= currScene.light.color.b;
-        scratchColor.mul(intensity);
+            scratchColor.r = triangleColorR;
+            scratchColor.g = triangleColorG;
+            scratchColor.b = triangleColorB;
+        }
 
         return scratchColor;
 
