@@ -21,7 +21,7 @@ public class Engine {
     protected Camera camera;
 
 //     final ArrayList<Entity> entities = new  ArrayList<>();
-    private Scene scene;
+    Scene scene;
 
      Engine(ShapeRenderer shapeRenderer, Camera camera) {
         this.camera = camera;
@@ -37,7 +37,7 @@ public class Engine {
 //         camQ.rotateWorld(-Math.PI/8, 1, 0, 0);
 
          this(shapeRenderer,
-             new Camera(80, 0.01f, 1000,
+             new Camera(80, 0.1f, 1000,
                  (float)Main.SCREEN_WIDTH/Main.SCREEN_HEIGHT, camPos, camQ));
 
 
