@@ -7,9 +7,7 @@ public class SolidRenderer {
     private static final RenderOptions DEFAULT_RENDER_OPTIONS = new RenderOptions();
     private static final float WIRE_FRAME_DEPTH_EPSILON = 1e-5f;
     private static final int WORLD_STRIDE = 3;
-    private static final int TRIANGLE_LIGHT_STRIDE = 3; //for each component of triangle color
-    private static final int VERTEX_LIGHT_STRIDE = 3; //for each component of vertex color
-    private static final int POST_CLIP_TRIANGLE_LIGHT_STRIDE = 3; //for each component of vertex color
+    private static final int RGB_STRIDE = 3;
 
     private final FrameBuffer frameBuffer;
     /**
@@ -80,8 +78,9 @@ public class SolidRenderer {
         postClipTriangleIndicesBuffer = new int[currentMaxVertices * 2 * 7 * 3];
         screenBuffer = new float[currentMaxVertices * 2 * 7 * 3 * 3];
 
-        if (currScene.hasLight()) {
+        if (currScene.hasLight() || currEntity.hasNormals)
             worldNormalsBuffer = new float[currentMaxVertices * WORLD_STRIDE];
+        if (currScene.hasLight()) {
 //            if (currScene.lightingType == LightingType.FLAT) {
             triangleLightBuffer = new float[currentMaxVertices * 2 * 3];
 //            }
@@ -113,6 +112,7 @@ public class SolidRenderer {
 
         vertexStride = entity.mesh.stride;
 
+//        System.out.println(vertexStride);
         final float[] vertices = currEntity.mesh.vertices;
         final int[] indices = currEntity.mesh.indices;
         totalVertices = vertices.length / vertexStride;
@@ -122,12 +122,13 @@ public class SolidRenderer {
         float[][] M = currEntity.transform.toMatrix();
 
 
-        if (currScene.hasLight()) {
+        if (currScene.hasLight() || currEntity.hasNormals) {
 
             computeWorldVertices(vertices, M, worldBuffer, vertexStride);
 
+//            if (currEntity.hasNormals)
+            //matrix recomputed and stored when toMatrix() called for M computation above
             if (currEntity.hasNormals)
-                //matrix recomputed and stored when toMatrix() called for M computation above
                 computeWorldNormals(vertices, currEntity.transform.rotation.matrix, worldNormalsBuffer, vertexStride);
 
             computeWorldToClipVertices(worldBuffer, VP, clipBuffer, Renderer.CLIP_STRIDE);
@@ -147,15 +148,9 @@ public class SolidRenderer {
                 computeFlatLighting(triangleCount, indices, triangleLightBuffer);
             } else if (currScene.lightingType == LightingType.GOURAUD) {
                 computeGouraudLighting(totalVertices, vertexLightBuffer);
-            } else {
-//            for (int i = 0; i < triangleCount; i++) {
-//                //set diffusion to 1, spectral to 0 (no light)
-//                triangleLightBuffer[i] = (i % 2 == 0) ? 1f : 0f;
-//            }
-//            Arrays.fill(triangleLightBuffer, 0, triangleCount, 1f);
             }
 
-        int postClipTriangleCount = SHClipTriangles(triangleCount, indices, postClipTriangleIndicesBuffer, postClipTriangleLightBuffer);
+        int postClipTriangleCount = shClipTriangles(triangleCount, indices, postClipTriangleIndicesBuffer, postClipTriangleLightBuffer);
 
         //check clipping worked (all clip vertices in frustum)
         for (int i = 0; i < postClipTriangleCount * 3; i++) {
@@ -199,7 +194,7 @@ public class SolidRenderer {
                 screenX3 >= 0 && screenX3 < Main.SCREEN_WIDTH &&
                 screenY3 >= 0 && screenY3 < Main.SCREEN_HEIGHT) : "illegal screen pos";
 
-            Color color = getRenderColor(options, i);
+            Color color = getRenderColor(i);
             rasterizeTriangle(options, color, i, screenX1, screenY1, invW1, screenX2, screenY2, invW2, screenX3, screenY3, invW3);
 
         }
@@ -212,20 +207,38 @@ public class SolidRenderer {
             int b = indices[idx + 1];
             int c = indices[idx + 2];
 
-            float n1x = worldNormalsBuffer[a * WORLD_STRIDE];
-            float n1y = worldNormalsBuffer[a * WORLD_STRIDE + 1];
-            float n1z = worldNormalsBuffer[a * WORLD_STRIDE + 2];
-            float n2x = worldNormalsBuffer[b * WORLD_STRIDE];
-            float n2y = worldNormalsBuffer[b * WORLD_STRIDE + 1];
-            float n2z = worldNormalsBuffer[b * WORLD_STRIDE + 2];
-            float n3x = worldNormalsBuffer[c * WORLD_STRIDE];
-            float n3y = worldNormalsBuffer[c * WORLD_STRIDE + 1];
-            float n3z = worldNormalsBuffer[c * WORLD_STRIDE + 2];
+            float ax = worldBuffer[a * Renderer.CLIP_STRIDE];
+            float ay = worldBuffer[a * Renderer.CLIP_STRIDE + 1];
+            float az = worldBuffer[a * Renderer.CLIP_STRIDE + 2];
+
+            float bx = worldBuffer[b * Renderer.CLIP_STRIDE];
+            float by = worldBuffer[b * Renderer.CLIP_STRIDE + 1];
+            float bz = worldBuffer[b * Renderer.CLIP_STRIDE + 2];
+
+            float cx = worldBuffer[c * Renderer.CLIP_STRIDE];
+            float cy = worldBuffer[c * Renderer.CLIP_STRIDE + 1];
+            float cz = worldBuffer[c * Renderer.CLIP_STRIDE + 2];
+
+            float e1x = bx - ax, e1y = by - ay, e1z = bz - az;
+            float e2x = cx - ax, e2y = cy - ay, e2z = cz - az;
+
+            float surfaceNormalX = e1y * e2z - e1z * e2y;
+            float surfaceNormalY = e1z * e2x - e1x * e2z;
+            float surfaceNormalZ = e1x * e2y - e1y * e2x;
+
+// orient using vertex normal
+            float vnx = worldNormalsBuffer[a * WORLD_STRIDE];
+            float vny = worldNormalsBuffer[a * WORLD_STRIDE + 1];
+            float vnz = worldNormalsBuffer[a * WORLD_STRIDE + 2];
+
+            if (vnx * surfaceNormalX + vny * surfaceNormalY + vnz * surfaceNormalZ < 0) {
+                surfaceNormalX = -surfaceNormalX; surfaceNormalY = -surfaceNormalY; surfaceNormalZ = -surfaceNormalZ;
+            }
 
             //triangle surface normal
-            float surfaceNormalX = (n1x + n2x + n3x) / 3f;
-            float surfaceNormalY = (n1y + n2y + n3y) / 3f;
-            float surfaceNormalZ = (n1z + n2z + n3z) / 3f;
+//            float surfaceNormalX = (n1x + n2x + n3x) / 3f;
+//            float surfaceNormalY = (n1y + n2y + n3y) / 3f;
+//            float surfaceNormalZ = (n1z + n2z + n3z) / 3f;
 
             float len = (float) Math.sqrt(surfaceNormalX * surfaceNormalX + surfaceNormalY * surfaceNormalY + surfaceNormalZ * surfaceNormalZ);
             surfaceNormalX /= len;
@@ -287,9 +300,9 @@ public class SolidRenderer {
             float resultColorG = Math.min(diffuseColorG + specularColorG + ambientColorG, 1f);
             float resultColorB = Math.min(diffuseColorB + specularColorB + ambientColorB, 1f);
 
-            out[i * TRIANGLE_LIGHT_STRIDE] = resultColorR;
-            out[i * TRIANGLE_LIGHT_STRIDE + 1] = resultColorG;
-            out[i * TRIANGLE_LIGHT_STRIDE + 2] = resultColorB;
+            out[i * RGB_STRIDE] = resultColorR;
+            out[i * RGB_STRIDE + 1] = resultColorG;
+            out[i * RGB_STRIDE + 2] = resultColorB;
         }
     }
 
@@ -357,9 +370,9 @@ public class SolidRenderer {
             float resultColorG = Math.min(diffuseColorG + specularColorG + ambientColorG, 1f);
             float resultColorB = Math.min(diffuseColorB + specularColorB + ambientColorB, 1f);
 
-            out[i * VERTEX_LIGHT_STRIDE] = resultColorR;
-            out[i * VERTEX_LIGHT_STRIDE + 1] = resultColorG;
-            out[i * VERTEX_LIGHT_STRIDE + 2] = resultColorB;
+            out[i * RGB_STRIDE] = resultColorR;
+            out[i * RGB_STRIDE + 1] = resultColorG;
+            out[i * RGB_STRIDE + 2] = resultColorB;
         }
     }
 
@@ -421,7 +434,7 @@ public class SolidRenderer {
         }
     }
 
-    private int SHClipTriangles(int triangleCount, int[] indices, int[] out, float[] lightOut) {
+    private int shClipTriangles(int triangleCount, int[] indices, int[] out, float[] lightOut) {
         int postClipTriangleCount = 0;
 
         for (int i = 0; i < triangleCount; i++) {
@@ -434,24 +447,15 @@ public class SolidRenderer {
             int polyVertexCount = clipTriangleAllPlanes(a, b, c);
             if (polyVertexCount == 0) continue;  // fully outside
 
-//            float parentDiffusion = 0, parentSpecular = 0;
             float parentColorR = 0;
             float parentColorG = 0;
             float parentColorB = 0;
-//            float parentIntensityA = 0;
-//            float parentIntensityB = 0;
-//            float parentIntensityC = 0;
             if (currScene.hasLight()) {
                 if (currScene.lightingType == LightingType.FLAT) {
-                    parentColorR = triangleLightBuffer[i * TRIANGLE_LIGHT_STRIDE];
-                    parentColorG = triangleLightBuffer[i * TRIANGLE_LIGHT_STRIDE + 1];
-                    parentColorB = triangleLightBuffer[i * TRIANGLE_LIGHT_STRIDE + 2];
+                    parentColorR = triangleLightBuffer[i * RGB_STRIDE];
+                    parentColorG = triangleLightBuffer[i * RGB_STRIDE + 1];
+                    parentColorB = triangleLightBuffer[i * RGB_STRIDE + 2];
                 }
-//                else if (currScene.lightingType == LightingType.GOURAUD) {
-//                    parentIntensityA = vertexLightBuffer[a];
-//                    parentIntensityB = vertexLightBuffer[b];
-//                    parentIntensityC = vertexLightBuffer[c];
-//                }
             }
 
             for (int j = 1; j < polyVertexCount - 1; j++) {
@@ -462,19 +466,19 @@ public class SolidRenderer {
 
                 if (currScene.hasLight()) {
                     if (currScene.lightingType == LightingType.FLAT) {
-                        lightOut[postClipTriangleCount * TRIANGLE_LIGHT_STRIDE] = parentColorR;
-                        lightOut[postClipTriangleCount * TRIANGLE_LIGHT_STRIDE + 1] = parentColorG;
-                        lightOut[postClipTriangleCount * TRIANGLE_LIGHT_STRIDE + 2] = parentColorB;
+                        lightOut[postClipTriangleCount * RGB_STRIDE] = parentColorR;
+                        lightOut[postClipTriangleCount * RGB_STRIDE + 1] = parentColorG;
+                        lightOut[postClipTriangleCount * RGB_STRIDE + 2] = parentColorB;
                     } else if (currScene.lightingType == LightingType.GOURAUD) {
-                        lightOut[(postClipTriangleCount * 3) * POST_CLIP_TRIANGLE_LIGHT_STRIDE] = vertexLightBuffer[polyIn[0] * VERTEX_LIGHT_STRIDE];
-                        lightOut[(postClipTriangleCount * 3) * POST_CLIP_TRIANGLE_LIGHT_STRIDE + 1] = vertexLightBuffer[polyIn[0] * VERTEX_LIGHT_STRIDE + 1];
-                        lightOut[(postClipTriangleCount * 3) * POST_CLIP_TRIANGLE_LIGHT_STRIDE + 2] = vertexLightBuffer[polyIn[0] * VERTEX_LIGHT_STRIDE + 2];
-                        lightOut[(postClipTriangleCount * 3 + 1) * POST_CLIP_TRIANGLE_LIGHT_STRIDE] = vertexLightBuffer[polyIn[j] * VERTEX_LIGHT_STRIDE];
-                        lightOut[(postClipTriangleCount * 3 + 1) * POST_CLIP_TRIANGLE_LIGHT_STRIDE + 1] = vertexLightBuffer[polyIn[j] * VERTEX_LIGHT_STRIDE + 1];
-                        lightOut[(postClipTriangleCount * 3 + 1) * POST_CLIP_TRIANGLE_LIGHT_STRIDE + 2] = vertexLightBuffer[polyIn[j] * VERTEX_LIGHT_STRIDE + 2];
-                        lightOut[(postClipTriangleCount * 3 + 2) * POST_CLIP_TRIANGLE_LIGHT_STRIDE] = vertexLightBuffer[polyIn[j + 1] * VERTEX_LIGHT_STRIDE];
-                        lightOut[(postClipTriangleCount * 3 + 2) * POST_CLIP_TRIANGLE_LIGHT_STRIDE + 1] = vertexLightBuffer[polyIn[j + 1] * VERTEX_LIGHT_STRIDE + 1];
-                        lightOut[(postClipTriangleCount * 3 + 2) * POST_CLIP_TRIANGLE_LIGHT_STRIDE + 2] = vertexLightBuffer[polyIn[j + 1] * VERTEX_LIGHT_STRIDE + 2];
+                        lightOut[(postClipTriangleCount * 3) * RGB_STRIDE] = vertexLightBuffer[polyIn[0] * RGB_STRIDE];
+                        lightOut[(postClipTriangleCount * 3) * RGB_STRIDE + 1] = vertexLightBuffer[polyIn[0] * RGB_STRIDE + 1];
+                        lightOut[(postClipTriangleCount * 3) * RGB_STRIDE + 2] = vertexLightBuffer[polyIn[0] * RGB_STRIDE + 2];
+                        lightOut[(postClipTriangleCount * 3 + 1) * RGB_STRIDE] = vertexLightBuffer[polyIn[j] * RGB_STRIDE];
+                        lightOut[(postClipTriangleCount * 3 + 1) * RGB_STRIDE + 1] = vertexLightBuffer[polyIn[j] * RGB_STRIDE + 1];
+                        lightOut[(postClipTriangleCount * 3 + 1) * RGB_STRIDE + 2] = vertexLightBuffer[polyIn[j] * RGB_STRIDE + 2];
+                        lightOut[(postClipTriangleCount * 3 + 2) * RGB_STRIDE] = vertexLightBuffer[polyIn[j + 1] * RGB_STRIDE];
+                        lightOut[(postClipTriangleCount * 3 + 2) * RGB_STRIDE + 1] = vertexLightBuffer[polyIn[j + 1] * RGB_STRIDE + 1];
+                        lightOut[(postClipTriangleCount * 3 + 2) * RGB_STRIDE + 2] = vertexLightBuffer[polyIn[j + 1] * RGB_STRIDE + 2];
                     }
                 }
                 postClipTriangleCount++;
@@ -494,7 +498,7 @@ public class SolidRenderer {
         for (int i = 0; i < Renderer.CLIP_PLANES.length; i++) {
 
             int[] plane = Renderer.CLIP_PLANES[i];
-            int outCount = SHClipPoly(polyIn, inCount, plane[0], plane[1], polyOut);
+            int outCount = shClipPoly(polyIn, inCount, plane[0], plane[1], polyOut);
 
             if (outCount == 0) return 0;  // discarded
 
@@ -507,7 +511,7 @@ public class SolidRenderer {
         return inCount;
     }
 
-    private int SHClipPoly(int[] polyIn, int inCount, int component, int sign, int[] polyOut) {
+    private int shClipPoly(int[] polyIn, int inCount, int component, int sign, int[] polyOut) {
         int outCount = 0;
 
         for (int i = 0; i < inCount; i++) {
@@ -522,15 +526,10 @@ public class SolidRenderer {
             boolean v1Outside = sign * v1 < -w1;
             boolean v2Outside = sign * v2 < -w2;
 
-            boolean bothOutside = v1Outside && v2Outside;
-            boolean bothInside = !v1Outside && !v2Outside;
-            boolean firstInside = !v1Outside && v2Outside;
-            boolean secondInside = v1Outside && !v2Outside;
-
-            if (bothOutside) {//keep none
-            } else if (bothInside) {
+            if (!v1Outside && !v2Outside) { //both inside
                 polyOut[outCount++] = edgeIdx2;
-            } else {
+            } else if (v1Outside && v2Outside) {} //both outside - skip
+            else { //one outside one inside
                 //compute intersection point
                 int i1 = edgeIdx1 * Renderer.CLIP_STRIDE;
                 int i2 = edgeIdx2 * Renderer.CLIP_STRIDE;
@@ -546,17 +545,17 @@ public class SolidRenderer {
                 clipBuffer[totalVertices * Renderer.CLIP_STRIDE + 3] = clipBuffer[i1 + 3] + t * (clipBuffer[i2 + 3] - clipBuffer[i1 + 3]);
 
                 if (currScene.hasLight() && currScene.lightingType == LightingType.GOURAUD) {
-                    vertexLightBuffer[totalVertices * VERTEX_LIGHT_STRIDE] = vertexLightBuffer[edgeIdx1 * VERTEX_LIGHT_STRIDE] +
-                        t * (vertexLightBuffer[edgeIdx2 * VERTEX_LIGHT_STRIDE] - vertexLightBuffer[edgeIdx1 * VERTEX_LIGHT_STRIDE]);
-                    vertexLightBuffer[totalVertices * VERTEX_LIGHT_STRIDE + 1] = vertexLightBuffer[edgeIdx1 * VERTEX_LIGHT_STRIDE + 1] +
-                        t * (vertexLightBuffer[edgeIdx2 * VERTEX_LIGHT_STRIDE + 1] - vertexLightBuffer[edgeIdx1 * VERTEX_LIGHT_STRIDE + 1]);
-                    vertexLightBuffer[totalVertices * VERTEX_LIGHT_STRIDE + 2] = vertexLightBuffer[edgeIdx1 * VERTEX_LIGHT_STRIDE + 2] +
-                        t * (vertexLightBuffer[edgeIdx2 * VERTEX_LIGHT_STRIDE + 2] - vertexLightBuffer[edgeIdx1 * VERTEX_LIGHT_STRIDE + 2]);
+                    vertexLightBuffer[totalVertices * RGB_STRIDE] = vertexLightBuffer[edgeIdx1 * RGB_STRIDE] +
+                        t * (vertexLightBuffer[edgeIdx2 * RGB_STRIDE] - vertexLightBuffer[edgeIdx1 * RGB_STRIDE]);
+                    vertexLightBuffer[totalVertices * RGB_STRIDE + 1] = vertexLightBuffer[edgeIdx1 * RGB_STRIDE + 1] +
+                        t * (vertexLightBuffer[edgeIdx2 * RGB_STRIDE + 1] - vertexLightBuffer[edgeIdx1 * RGB_STRIDE + 1]);
+                    vertexLightBuffer[totalVertices * RGB_STRIDE + 2] = vertexLightBuffer[edgeIdx1 * RGB_STRIDE + 2] +
+                        t * (vertexLightBuffer[edgeIdx2 * RGB_STRIDE + 2] - vertexLightBuffer[edgeIdx1 * RGB_STRIDE + 2]);
                 }
-                if (firstInside) {
+                if (!v1Outside) { //first inside
                     polyOut[outCount++] = totalVertices;
                 }
-                if (secondInside) {
+                else { //second inside
                     polyOut[outCount++] = totalVertices;
                     polyOut[outCount++] = edgeIdx2;
                 }
@@ -572,18 +571,16 @@ public class SolidRenderer {
     private void rasterizeTriangle(RenderOptions options, Color color, int idx, int v1X, int v1Y, float invW1, int v2X, int v2Y, float invW2, int v3X, int v3Y, float invW3) {
 
 
-        Color color1 = scratchColorRaster1, color2 = scratchColorRaster2, color3 = scratchColorRaster3;
-
         if (!currEntity.isLightObj && currScene.hasLight() && currScene.lightingType == LightingType.GOURAUD) {
-            float color1R = postClipTriangleLightBuffer[(idx * 3) * POST_CLIP_TRIANGLE_LIGHT_STRIDE];
-            float color1G = postClipTriangleLightBuffer[(idx * 3) * POST_CLIP_TRIANGLE_LIGHT_STRIDE + 1];
-            float color1B = postClipTriangleLightBuffer[(idx * 3) * POST_CLIP_TRIANGLE_LIGHT_STRIDE + 2];
-            float color2R = postClipTriangleLightBuffer[(idx * 3 + 1) * POST_CLIP_TRIANGLE_LIGHT_STRIDE];
-            float color2G = postClipTriangleLightBuffer[(idx * 3 + 1) * POST_CLIP_TRIANGLE_LIGHT_STRIDE + 1];
-            float color2B = postClipTriangleLightBuffer[(idx * 3 + 1) * POST_CLIP_TRIANGLE_LIGHT_STRIDE + 2];
-            float color3R = postClipTriangleLightBuffer[(idx * 3 + 2) * POST_CLIP_TRIANGLE_LIGHT_STRIDE];
-            float color3G = postClipTriangleLightBuffer[(idx * 3 + 2) * POST_CLIP_TRIANGLE_LIGHT_STRIDE + 1];
-            float color3B = postClipTriangleLightBuffer[(idx * 3 + 2) * POST_CLIP_TRIANGLE_LIGHT_STRIDE + 2];
+            float color1R = postClipTriangleLightBuffer[(idx * 3) * RGB_STRIDE];
+            float color1G = postClipTriangleLightBuffer[(idx * 3) * RGB_STRIDE + 1];
+            float color1B = postClipTriangleLightBuffer[(idx * 3) * RGB_STRIDE + 2];
+            float color2R = postClipTriangleLightBuffer[(idx * 3 + 1) * RGB_STRIDE];
+            float color2G = postClipTriangleLightBuffer[(idx * 3 + 1) * RGB_STRIDE + 1];
+            float color2B = postClipTriangleLightBuffer[(idx * 3 + 1) * RGB_STRIDE + 2];
+            float color3R = postClipTriangleLightBuffer[(idx * 3 + 2) * RGB_STRIDE];
+            float color3G = postClipTriangleLightBuffer[(idx * 3 + 2) * RGB_STRIDE + 1];
+            float color3B = postClipTriangleLightBuffer[(idx * 3 + 2) * RGB_STRIDE + 2];
 
             scratchColorRaster1.r = color1R;
             scratchColorRaster1.g = color1G;
@@ -599,13 +596,13 @@ public class SolidRenderer {
         //a top, b middle, c bottom vertex
         int aX = v1X, aY = v1Y;
         float aInvW = invW1;
-        Color colorA = color1;
+        Color colorA = scratchColorRaster1;
         int bX = v2X, bY = v2Y;
         float bInvW = invW2;
-        Color colorB = color2;
+        Color colorB = scratchColorRaster2;
         int cX = v3X, cY = v3Y;
         float cInvW = invW3;
-        Color colorC = color3;
+        Color colorC = scratchColorRaster3;
         int tX, tY;
         float tInvW;
         Color tColor;
@@ -931,15 +928,15 @@ public class SolidRenderer {
         }
     }
 
-    private Color getRenderColor(RenderOptions options, int idx) {
+    private Color getRenderColor(int idx) {
 
         if (currEntity.isLightObj || !currScene.hasLight() || currScene.lightingType == LightingType.GOURAUD)
             scratchColor.set(currEntity.material.diffuse);
         else {
 
-            float triangleColorR = postClipTriangleLightBuffer[idx * POST_CLIP_TRIANGLE_LIGHT_STRIDE];
-            float triangleColorG = postClipTriangleLightBuffer[idx * POST_CLIP_TRIANGLE_LIGHT_STRIDE + 1];
-            float triangleColorB = postClipTriangleLightBuffer[idx * POST_CLIP_TRIANGLE_LIGHT_STRIDE + 2];
+            float triangleColorR = postClipTriangleLightBuffer[idx * RGB_STRIDE];
+            float triangleColorG = postClipTriangleLightBuffer[idx * RGB_STRIDE + 1];
+            float triangleColorB = postClipTriangleLightBuffer[idx * RGB_STRIDE + 2];
 
             scratchColor.r = triangleColorR;
             scratchColor.g = triangleColorG;
@@ -947,17 +944,6 @@ public class SolidRenderer {
         }
 
         return scratchColor;
-
-//        if (!options.randomizeTexture) {
-//            return color;
-//        }
-//
-//        // deterministic pseudo-random hash from all 3 vertex indices
-//        int hash = (idx1 * 92837111) ^ (idx2 * 689287499) ^ (idx3 * 283823481);
-//        float offset = ((hash & 0xFF) / 255f - 0.5f) * 0.12f; // range [-0.06, 0.06]
-//
-//        scratchColor.set(Math.clamp(color.r + offset, 0, 1), Math.clamp(color.g + offset, 0, 1), Math.clamp(color.b + offset, 0, 1), 1f);
-//        return scratchColor;
     }
 
     /**
@@ -1002,20 +988,35 @@ public class SolidRenderer {
             if (cull) continue;
 
             if (closedMesh) {
-                // compute face normal from two edges
-                float e1x = x2 - x1, e1y = y2 - y1, e1z = z2 - z1;
-                float e2x = x3 - x1, e2y = y3 - y1, e2z = z3 - z1;
 
-                // cross product → face normal
-                float fnx = e1y * e2z - e1z * e2y;
-                float fny = e1z * e2x - e1x * e2z;
-                float fnz = e1x * e2y - e1y * e2x;
+                if (currEntity.hasNormals) {
+                    float nx1 = worldNormalsBuffer[idx1 * WORLD_STRIDE];
+                    float ny1 = worldNormalsBuffer[idx1 * WORLD_STRIDE + 1];
+                    float nz1 = worldNormalsBuffer[idx1 * WORLD_STRIDE + 2];
 
-                // dot with view direction
-                float vx = -x1, vy = -y1, vz = -z1;
-                float dot = fnx * vx + fny * vy + fnz * vz;
+                    float vx = currCam.transform.position[0] - worldBuffer[idx1 * Renderer.CLIP_STRIDE];
+                    float vy = currCam.transform.position[1] - worldBuffer[idx1 * Renderer.CLIP_STRIDE + 1];
+                    float vz = currCam.transform.position[2] - worldBuffer[idx1 * Renderer.CLIP_STRIDE + 2];
 
-                if (dot >= 0) continue; //backface cull
+                    float dot1 = nx1 * vx + ny1 * vy + nz1 * vz;
+
+                    if (dot1 <= 0) continue;
+                } else {
+                    // compute face normal from two edges
+                    float e1x = x2 - x1, e1y = y2 - y1, e1z = z2 - z1;
+                    float e2x = x3 - x1, e2y = y3 - y1, e2z = z3 - z1;
+
+                    // cross product → face normal
+                    float fnx = e1y * e2z - e1z * e2y;
+                    float fny = e1z * e2x - e1x * e2z;
+                    float fnz = e1x * e2y - e1y * e2x;
+
+                    // dot with view direction
+                    float vx = -x1, vy = -y1, vz = -z1;
+                    float dot = fnx * vx + fny * vy + fnz * vz;
+
+                    if (dot >= 0) continue; //backface cull
+                }
 
             }
 
