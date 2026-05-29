@@ -1,5 +1,6 @@
 package com.engine;
 
+
 public interface Behavior {
 
     boolean update(Entity entity, float dt);
@@ -38,15 +39,17 @@ class OscillateBehavior implements Behavior {
     private static final float DRAW_THRESHOLD_SQR = 0.005f*0.005f;
     float speed;
     float[] axis;
-    int dir = 1;
     float[] center;
+    float dist;
 
+    int dir = 1;
     float distSqrSinceLastDraw;
 
-    public OscillateBehavior(float speed, float[] axis, float[] center) {
+    public OscillateBehavior(float speed, float[] axis, float[] center, float dist) {
         this.speed = speed;
         this.axis = axis;
         this.center = center;
+        this.dist = dist;
     }
 
     @Override
@@ -56,7 +59,7 @@ class OscillateBehavior implements Behavior {
         float dz = speed * dt * Matrix.getZ(axis) * dir;
         entity.translateWorld(dx, dy, dz);
 
-        if (Matrix.normSqr(Matrix.sub(Matrix.getSlice(entity.transform.position, 0, 3), center)) >= 1)
+        if (Matrix.normSqr(Matrix.sub(Matrix.getSlice(entity.transform.position, 0, 3), center)) >= dist)
             dir *= -1;
 
 //        return true;
@@ -85,6 +88,13 @@ class CircleBehavior implements Behavior {
     public CircleBehavior(double omega, float[] center, float[] planeNormal) {
         this.omega = omega;
         this.center = center;
+
+        assert planeNormal.length == 3;
+        float norm = (float) Math.sqrt(planeNormal[0]*planeNormal[0]+planeNormal[1]*planeNormal[1]+planeNormal[2]*planeNormal[2]);
+        planeNormal[0] /= norm;
+        planeNormal[1] /= norm;
+        planeNormal[2] /= norm;
+
         this.planeNormal = planeNormal;
     }
 
