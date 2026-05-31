@@ -52,7 +52,7 @@ public class Main extends ApplicationAdapter implements EngineListener {
         engine.setListener(this);
 
 //        engine.setScene(new GroundScene(1000, 1000));
-        engine.setScene(new MultiScene());
+        engine.setScene(new TestScene());
 
 //        engine.camera.transform.position = new float[]{43, 1990, -680};
 
@@ -64,7 +64,9 @@ public class Main extends ApplicationAdapter implements EngineListener {
 
 
         if (Gdx.input.isKeyJustPressed(Input.Keys.L))
-            engine.scene.lightingType = (engine.scene.lightingType == LightingType.FLAT) ? LightingType.GOURAUD : LightingType.FLAT;
+            engine.scene.lightingType = (engine.scene.lightingType == LightingType.FLAT) ?
+                LightingType.GOURAUD :
+                (engine.scene.lightingType == LightingType.GOURAUD) ? LightingType.PHONG : LightingType.FLAT;
         float dt = Gdx.graphics.getDeltaTime();
         engine.update(dt);
 
