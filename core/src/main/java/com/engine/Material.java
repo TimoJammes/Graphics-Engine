@@ -41,7 +41,7 @@ public class Material {
     private static final Color DEFAULT_DIFFUSE = new Color(1, 1, 1, 1);
     private static final Color DEFAULT_AMBIENT = DEFAULT_DIFFUSE.cpy().mul(0.2f);
     private static final Color DEFAULT_SPECULAR = DEFAULT_DIFFUSE.cpy().mul(0.5f);
-    private static final int DEFAULT_SHININESS = 32;
+    private static final float DEFAULT_SHININESS = 32f;
 
     Color ambient;
     Color diffuse;
