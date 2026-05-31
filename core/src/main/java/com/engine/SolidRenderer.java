@@ -28,7 +28,6 @@ public class SolidRenderer {
      */
     private int[] postClipTriangleIndicesBuffer;
     private float[] postClipTriangleLightBuffer;
-    private float[] screenBuffer;
 
     private int currentMaxVertices = 0;
 
@@ -77,7 +76,6 @@ public class SolidRenderer {
         clipBuffer = new float[currentMaxVertices * Renderer.CLIP_STRIDE * 4];
         triangleBuffer = new int[currentMaxVertices * 2];
         postClipTriangleIndicesBuffer = new int[currentMaxVertices * 2 * 7 * 3];
-        screenBuffer = new float[currentMaxVertices * 2 * 7 * 3 * 3];
 
         if (currScene.hasLight() || currEntity.hasNormals)
             worldNormalsBuffer = new float[currentMaxVertices * WORLD_STRIDE * 4];
@@ -124,7 +122,7 @@ public class SolidRenderer {
                 //matrix recomputed and stored when toMatrix() called for M computation above
                 computeWorldNormals(vertices, currEntity.transform.rotation.matrix, worldNormalsBuffer, vertexStride);
 
-            computeWorldToClipVertices(worldBuffer, VP, clipBuffer, Renderer.CLIP_STRIDE);
+            computeWorldToClipVertices(worldBuffer, totalVertices, VP, clipBuffer, Renderer.CLIP_STRIDE);
 
         } else {
             float[][] MVP = Matrix.matmul(VP, M); //Model-View-Projection Matrix
@@ -145,8 +143,6 @@ public class SolidRenderer {
 
         int postClipTriangleCount = shClipTriangles(triangleCount, indices, postClipTriangleIndicesBuffer);
 
-        computeScreenVertices(postClipTriangleCount, screenBuffer);
-
         displayTriangles(options, postClipTriangleCount);
 
         currEntity = null;
@@ -154,18 +150,34 @@ public class SolidRenderer {
 
 
     private void displayTriangles(RenderOptions options, int postClipTriangleCount) {
+
+        float scaleX = (Main.SCREEN_WIDTH - 1) / 2f;
+        float scaleY = (Main.SCREEN_HEIGHT - 1) / 2f;
         for (int i = 0; i < postClipTriangleCount; i++) {
 
-            int screenX1 = (int) screenBuffer[i * 3 * 3];
-            int screenY1 = (int) screenBuffer[i * 3 * 3 + 1];
-            float invW1 = screenBuffer[i * 3 * 3 + 2];
-            int screenX2 = (int) screenBuffer[(i * 3 + 1) * 3];
-            int screenY2 = (int) screenBuffer[(i * 3 + 1) * 3 + 1];
-            float invW2 = screenBuffer[(i * 3 + 1) * 3 + 2];
-            int screenX3 = (int) screenBuffer[(i * 3 + 2) * 3];
-            int screenY3 = (int) screenBuffer[(i * 3 + 2) * 3 + 1];
-            float invW3 = screenBuffer[(i * 3 + 2) * 3 + 2];
+            int idx1 = postClipTriangleIndicesBuffer[i * 3];
+            int idx2 = postClipTriangleIndicesBuffer[i * 3+1];
+            int idx3 = postClipTriangleIndicesBuffer[i * 3+2];
 
+            float w1 = clipBuffer[idx1 * Renderer.CLIP_STRIDE + 3];
+            float ndcX1 = Math.clamp(clipBuffer[idx1 * Renderer.CLIP_STRIDE] / w1, -1, 1);
+            float ndcY1 = Math.clamp(clipBuffer[idx1 * Renderer.CLIP_STRIDE + 1] / w1, -1, 1);
+            float w2 = clipBuffer[idx2 * Renderer.CLIP_STRIDE + 3];
+            float ndcX2 = Math.clamp(clipBuffer[idx2 * Renderer.CLIP_STRIDE] / w2, -1, 1);
+            float ndcY2 = Math.clamp(clipBuffer[idx2 * Renderer.CLIP_STRIDE + 1] / w2, -1, 1);
+            float w3 = clipBuffer[idx3 * Renderer.CLIP_STRIDE + 3];
+            float ndcX3 = Math.clamp(clipBuffer[idx3 * Renderer.CLIP_STRIDE] / w3, -1, 1);
+            float ndcY3 = Math.clamp(clipBuffer[idx3 * Renderer.CLIP_STRIDE + 1] / w3, -1, 1);
+
+            int screenX1 = (int) ((ndcX1 + 1) * scaleX);
+            int screenY1 = (int) ((ndcY1 + 1) * scaleY);
+            float invW1 = 1/w1;
+            int screenX2 = (int) ((ndcX2 + 1) * scaleX);
+            int screenY2 = (int) ((ndcY2 + 1) * scaleY);
+            float invW2 = 1/w2;
+            int screenX3 = (int) ((ndcX3 + 1) * scaleX);
+            int screenY3 = (int) ((ndcY3 + 1) * scaleY);
+            float invW3 = 1/w3;
 
             if (!currEntity.isLightObj && currScene.hasLight() && currScene.lightingType == LightingType.GOURAUD)
                 rasterizeTriangleGouraud(options, i, screenX1, screenY1, invW1, screenX2, screenY2, invW2, screenX3, screenY3, invW3);
@@ -244,6 +256,10 @@ public class SolidRenderer {
     }
 
     static void computePhong(float x, float y, float z, float nx, float ny, float nz, Light light, Camera camera, Entity entity, int outIndex, float[] out) {
+        float ambientColorR = light.ambient.r * entity.material.ambient.r;
+        float ambientColorG = light.ambient.g * entity.material.ambient.g;
+        float ambientColorB = light.ambient.b * entity.material.ambient.b;
+
         float vertexToLightX = light.getX() - x;
         float vertexToLightY = light.getY() - y;
         float vertexToLightZ = light.getZ() - z;
@@ -255,6 +271,12 @@ public class SolidRenderer {
 
         float diffuseDot = vertexToLightX * nx + vertexToLightY * ny + vertexToLightZ * nz;
 
+        if (diffuseDot <= 0) {
+            out[outIndex * RGB_STRIDE] = Math.min(ambientColorR, 0);
+            out[outIndex * RGB_STRIDE + 1] = Math.min(ambientColorG, 0);
+            out[outIndex * RGB_STRIDE + 2] = Math.min(ambientColorB, 0);
+            return;
+        }
         float lightToX = -vertexToLightX, lightToY = -vertexToLightY, lightToZ = -vertexToLightZ;
         float dotLightNormal = -diffuseDot;
         //reflection pointing out of vertex
@@ -273,8 +295,15 @@ public class SolidRenderer {
 
         float specDot = vertexToViewX * reflectionX + vertexToViewY * reflectionY + vertexToViewZ * reflectionZ;
 
-        float specular = (float) Math.pow(Math.max(specDot, 0f), entity.material.shininess);
-        float diffuse = Math.max(diffuseDot, 0f);
+        float specular;
+        if (specDot <= 0)
+            specular = 0;
+        else if (entity.material.shininess == (int) entity.material.shininess)
+            specular = powInt(specDot, (int) entity.material.shininess);
+        else
+            specular = (float) Math.pow(specDot, entity.material.shininess);
+
+        float diffuse = diffuseDot; //diffuseDot <= 0 guarded above
 
         float diffuseColorR = light.diffuse.r * diffuse * entity.material.diffuse.r;
         float diffuseColorG = light.diffuse.g * diffuse * entity.material.diffuse.g;
@@ -284,9 +313,6 @@ public class SolidRenderer {
         float specularColorG = light.specular.g * specular * entity.material.specular.g;
         float specularColorB = light.specular.b * specular * entity.material.specular.b;
 
-        float ambientColorR = light.ambient.r * entity.material.ambient.r;
-        float ambientColorG = light.ambient.g * entity.material.ambient.g;
-        float ambientColorB = light.ambient.b * entity.material.ambient.b;
 
         float resultColorR = Math.min(diffuseColorR + specularColorR + ambientColorR, 1f);
         float resultColorG = Math.min(diffuseColorG + specularColorG + ambientColorG, 1f);
@@ -297,8 +323,8 @@ public class SolidRenderer {
         out[outIndex * RGB_STRIDE + 2] = resultColorB;
     }
 
-    static void computeWorldToClipVertices(float[] vertices, float[][] VP, float[] out, int stride) {
-        for (int i = 0; i < vertices.length / stride; i++) {
+    static void computeWorldToClipVertices(float[] vertices, int head, float[][] VP, float[] out, int stride) {
+        for (int i = 0; i < head; i++) {
 
             float x = vertices[i * stride];
             float y = vertices[i * stride + 1];
@@ -332,26 +358,6 @@ public class SolidRenderer {
 
             //to avoid float[] creation through Matrix.matmul
             Renderer.directMatmul4(out, i * Renderer.CLIP_STRIDE, M, x, y, z, 1);
-        }
-    }
-
-    private void computeScreenVertices(int postClipTriangleCount, float[] out) {
-        for (int i = 0; i < postClipTriangleCount; i++) {
-
-            for (int j = 0; j < 3; j++) {
-                int idx = postClipTriangleIndicesBuffer[i * 3 + j];
-
-                final float w = clipBuffer[idx * Renderer.CLIP_STRIDE + 3];
-                final float ndcX = Math.clamp(clipBuffer[idx * Renderer.CLIP_STRIDE] / w, -1, 1);
-                final float ndcY = Math.clamp(clipBuffer[idx * Renderer.CLIP_STRIDE + 1] / w, -1, 1);
-
-                final float screenX = (ndcX + 1) / 2 * (Main.SCREEN_WIDTH - 1);
-                final float screenY = (ndcY + 1) / 2 * (Main.SCREEN_HEIGHT - 1);
-
-                out[(i * 3 + j) * 3] = screenX;
-                out[(i * 3 + j) * 3 + 1] = screenY;
-                out[(i * 3 + j) * 3 + 2] = 1 / w;
-            }
         }
     }
 
@@ -1386,5 +1392,15 @@ public class SolidRenderer {
             out[triangleCount++] = i;  // only add visible triangles
         }
         return triangleCount;
+    }
+
+    static float powInt(float base, int exp) {
+        float result = 1f;
+        while (exp > 0) {
+            if ((exp & 1) == 1) result *= base;
+            base *= base;
+            exp >>= 1;
+        }
+        return result;
     }
 }
