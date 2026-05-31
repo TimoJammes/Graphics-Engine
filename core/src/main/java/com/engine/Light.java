@@ -29,5 +29,8 @@ public class Light {
     }
 
     float[] getPosition() {return entity.transform.position;}
+    float getX() {return getPosition()[0];}
+    float getY() {return getPosition()[1];}
+    float getZ() {return getPosition()[2];}
 
 }
