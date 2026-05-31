@@ -18,7 +18,6 @@ public class SolidRenderer {
     private float[] worldNormalsBuffer;
 
     private float[] triangleLightBuffer; //flat face shading
-    //    private float[] triangleVerticesLightBuffer; //gouraud shading
     private float[] vertexLightBuffer;
     /**
      * stores indices of non-culled triangles (each index points to the first index of a triangle in indices)
@@ -29,8 +28,6 @@ public class SolidRenderer {
      */
     private int[] postClipTriangleIndicesBuffer;
     private float[] postClipTriangleLightBuffer;
-    private float[] postClipTriangleWorldNormalsBuffer;
-    private float[] postClipTriangleWorldVerticesBuffer;
     private float[] screenBuffer;
 
     private int currentMaxVertices = 0;
@@ -85,17 +82,9 @@ public class SolidRenderer {
         if (currScene.hasLight() || currEntity.hasNormals)
             worldNormalsBuffer = new float[currentMaxVertices * WORLD_STRIDE * 4];
         if (currScene.hasLight()) {
-//            if (currScene.lightingType == LightingType.FLAT) {
             triangleLightBuffer = new float[currentMaxVertices * 2 * 3];
-//            }
-//            if (currScene.lightingType == LightingType.GOURAUD) {
             vertexLightBuffer = new float[currentMaxVertices * 4 * 3];
-//            }
-//            else if  (currScene.lightingType == LightingType.GOURAUD) {
-            postClipTriangleLightBuffer = new float[currentMaxVertices * 2 * 3 * 3 * 7];
-            postClipTriangleWorldNormalsBuffer = new float[currentMaxVertices * 2 * 3 * 3 * 7];
-            postClipTriangleWorldVerticesBuffer = new float[currentMaxVertices * 2 * 3 * 3 * 7];
-//            }
+            postClipTriangleLightBuffer = new float[currentMaxVertices * 2 * RGB_STRIDE * 7];
         }
     }
 
@@ -118,7 +107,6 @@ public class SolidRenderer {
 
         vertexStride = entity.mesh.stride;
 
-//        System.out.println(vertexStride);
         final float[] vertices = currEntity.mesh.vertices;
         final int[] indices = currEntity.mesh.indices;
         totalVertices = vertices.length / vertexStride;
@@ -371,7 +359,6 @@ public class SolidRenderer {
         int postClipTriangleCount = 0;
 
         for (int i = 0; i < triangleCount; i++) {
-//            int idx = triangleBuffer[triangleOrderBuffer[i]];
             int idx = triangleBuffer[i];
             int a = indices[idx];
             int b = indices[idx + 1];
@@ -397,42 +384,10 @@ public class SolidRenderer {
                 out[postClipTriangleCount * 3 + 1] = polyIn[j];
                 out[postClipTriangleCount * 3 + 2] = polyIn[j + 1];
 
-                if (currScene.hasLight()) {
-                    if (currScene.lightingType == LightingType.FLAT) {
-                        postClipTriangleLightBuffer[postClipTriangleCount * RGB_STRIDE] = parentColorR;
-                        postClipTriangleLightBuffer[postClipTriangleCount * RGB_STRIDE + 1] = parentColorG;
-                        postClipTriangleLightBuffer[postClipTriangleCount * RGB_STRIDE + 2] = parentColorB;
-                    } else if (currScene.lightingType == LightingType.GOURAUD) {
-                        postClipTriangleLightBuffer[(postClipTriangleCount * 3) * RGB_STRIDE] = vertexLightBuffer[polyIn[0] * RGB_STRIDE];
-                        postClipTriangleLightBuffer[(postClipTriangleCount * 3) * RGB_STRIDE + 1] = vertexLightBuffer[polyIn[0] * RGB_STRIDE + 1];
-                        postClipTriangleLightBuffer[(postClipTriangleCount * 3) * RGB_STRIDE + 2] = vertexLightBuffer[polyIn[0] * RGB_STRIDE + 2];
-                        postClipTriangleLightBuffer[(postClipTriangleCount * 3 + 1) * RGB_STRIDE] = vertexLightBuffer[polyIn[j] * RGB_STRIDE];
-                        postClipTriangleLightBuffer[(postClipTriangleCount * 3 + 1) * RGB_STRIDE + 1] = vertexLightBuffer[polyIn[j] * RGB_STRIDE + 1];
-                        postClipTriangleLightBuffer[(postClipTriangleCount * 3 + 1) * RGB_STRIDE + 2] = vertexLightBuffer[polyIn[j] * RGB_STRIDE + 2];
-                        postClipTriangleLightBuffer[(postClipTriangleCount * 3 + 2) * RGB_STRIDE] = vertexLightBuffer[polyIn[j + 1] * RGB_STRIDE];
-                        postClipTriangleLightBuffer[(postClipTriangleCount * 3 + 2) * RGB_STRIDE + 1] = vertexLightBuffer[polyIn[j + 1] * RGB_STRIDE + 1];
-                        postClipTriangleLightBuffer[(postClipTriangleCount * 3 + 2) * RGB_STRIDE + 2] = vertexLightBuffer[polyIn[j + 1] * RGB_STRIDE + 2];
-                    } else if (currScene.lightingType == LightingType.PHONG) {
-                        postClipTriangleWorldNormalsBuffer[(postClipTriangleCount * 3) * WORLD_STRIDE] = worldNormalsBuffer[polyIn[0] * WORLD_STRIDE];
-                        postClipTriangleWorldNormalsBuffer[(postClipTriangleCount * 3) * WORLD_STRIDE + 1] = worldNormalsBuffer[polyIn[0] * WORLD_STRIDE + 1];
-                        postClipTriangleWorldNormalsBuffer[(postClipTriangleCount * 3) * WORLD_STRIDE + 2] = worldNormalsBuffer[polyIn[0] * WORLD_STRIDE + 2];
-                        postClipTriangleWorldNormalsBuffer[(postClipTriangleCount * 3 + 1) * WORLD_STRIDE] = worldNormalsBuffer[polyIn[j] * WORLD_STRIDE];
-                        postClipTriangleWorldNormalsBuffer[(postClipTriangleCount * 3 + 1) * WORLD_STRIDE + 1] = worldNormalsBuffer[polyIn[j] * WORLD_STRIDE + 1];
-                        postClipTriangleWorldNormalsBuffer[(postClipTriangleCount * 3 + 1) * WORLD_STRIDE + 2] = worldNormalsBuffer[polyIn[j] * WORLD_STRIDE + 2];
-                        postClipTriangleWorldNormalsBuffer[(postClipTriangleCount * 3 + 2) * WORLD_STRIDE] = worldNormalsBuffer[polyIn[j + 1] * WORLD_STRIDE];
-                        postClipTriangleWorldNormalsBuffer[(postClipTriangleCount * 3 + 2) * WORLD_STRIDE + 1] = worldNormalsBuffer[polyIn[j + 1] * WORLD_STRIDE + 1];
-                        postClipTriangleWorldNormalsBuffer[(postClipTriangleCount * 3 + 2) * WORLD_STRIDE + 2] = worldNormalsBuffer[polyIn[j + 1] * WORLD_STRIDE + 2];
-
-                        postClipTriangleWorldVerticesBuffer[(postClipTriangleCount * 3) * WORLD_STRIDE] = worldBuffer[polyIn[0] * Renderer.CLIP_STRIDE];
-                        postClipTriangleWorldVerticesBuffer[(postClipTriangleCount * 3) * WORLD_STRIDE + 1] = worldBuffer[polyIn[0] * Renderer.CLIP_STRIDE + 1];
-                        postClipTriangleWorldVerticesBuffer[(postClipTriangleCount * 3) * WORLD_STRIDE + 2] = worldBuffer[polyIn[0] * Renderer.CLIP_STRIDE + 2];
-                        postClipTriangleWorldVerticesBuffer[(postClipTriangleCount * 3 + 1) * WORLD_STRIDE] = worldBuffer[polyIn[j] * Renderer.CLIP_STRIDE];
-                        postClipTriangleWorldVerticesBuffer[(postClipTriangleCount * 3 + 1) * WORLD_STRIDE + 1] = worldBuffer[polyIn[j] * Renderer.CLIP_STRIDE + 1];
-                        postClipTriangleWorldVerticesBuffer[(postClipTriangleCount * 3 + 1) * WORLD_STRIDE + 2] = worldBuffer[polyIn[j] * Renderer.CLIP_STRIDE + 2];
-                        postClipTriangleWorldVerticesBuffer[(postClipTriangleCount * 3 + 2) * WORLD_STRIDE] = worldBuffer[polyIn[j + 1] * Renderer.CLIP_STRIDE];
-                        postClipTriangleWorldVerticesBuffer[(postClipTriangleCount * 3 + 2) * WORLD_STRIDE + 1] = worldBuffer[polyIn[j + 1] * Renderer.CLIP_STRIDE + 1];
-                        postClipTriangleWorldVerticesBuffer[(postClipTriangleCount * 3 + 2) * WORLD_STRIDE + 2] = worldBuffer[polyIn[j + 1] * Renderer.CLIP_STRIDE + 2];
-                    }
+                if (currScene.hasLight() && currScene.lightingType == LightingType.FLAT) {
+                    postClipTriangleLightBuffer[postClipTriangleCount * RGB_STRIDE] = parentColorR;
+                    postClipTriangleLightBuffer[postClipTriangleCount * RGB_STRIDE + 1] = parentColorG;
+                    postClipTriangleLightBuffer[postClipTriangleCount * RGB_STRIDE + 2] = parentColorB;
                 }
                 postClipTriangleCount++;
 
@@ -538,28 +493,31 @@ public class SolidRenderer {
     }
 
     /*https://www.sunshine2k.de/coding/java/TriangleRasterization/TriangleRasterization.html*/
-    private void rasterizeTrianglePhong(RenderOptions options, int idx, int v1X, int v1Y, float invW1, int v2X, int v2Y, float invW2, int v3X, int v3Y, float invW3) {
+    private void rasterizeTrianglePhong(RenderOptions options, int i, int v1X, int v1Y, float invW1, int v2X, int v2Y, float invW2, int v3X, int v3Y, float invW3) {
 
+        int idx1 = postClipTriangleIndicesBuffer[i * 3];
+        int idx2 = postClipTriangleIndicesBuffer[i * 3 + 1];
+        int idx3 = postClipTriangleIndicesBuffer[i * 3 + 2];
 
-        float aNx = postClipTriangleWorldNormalsBuffer[(idx * 3) * WORLD_STRIDE];
-        float aNy = postClipTriangleWorldNormalsBuffer[(idx * 3) * WORLD_STRIDE + 1];
-        float aNz = postClipTriangleWorldNormalsBuffer[(idx * 3) * WORLD_STRIDE + 2];
-        float bNx = postClipTriangleWorldNormalsBuffer[(idx * 3 + 1) * WORLD_STRIDE];
-        float bNy = postClipTriangleWorldNormalsBuffer[(idx * 3 + 1) * WORLD_STRIDE + 1];
-        float bNz = postClipTriangleWorldNormalsBuffer[(idx * 3 + 1) * WORLD_STRIDE + 2];
-        float cNx = postClipTriangleWorldNormalsBuffer[(idx * 3 + 2) * WORLD_STRIDE];
-        float cNy = postClipTriangleWorldNormalsBuffer[(idx * 3 + 2) * WORLD_STRIDE + 1];
-        float cNz = postClipTriangleWorldNormalsBuffer[(idx * 3 + 2) * WORLD_STRIDE + 2];
+        float aNx = worldNormalsBuffer[idx1 * WORLD_STRIDE];
+        float aNy = worldNormalsBuffer[idx1 * WORLD_STRIDE + 1];
+        float aNz = worldNormalsBuffer[idx1 * WORLD_STRIDE + 2];
+        float bNx = worldNormalsBuffer[idx2 * WORLD_STRIDE];
+        float bNy = worldNormalsBuffer[idx2 * WORLD_STRIDE + 1];
+        float bNz = worldNormalsBuffer[idx2 * WORLD_STRIDE + 2];
+        float cNx = worldNormalsBuffer[idx3 * WORLD_STRIDE];
+        float cNy = worldNormalsBuffer[idx3 * WORLD_STRIDE + 1];
+        float cNz = worldNormalsBuffer[idx3 * WORLD_STRIDE + 2];
 
-        float aXWorld = postClipTriangleWorldVerticesBuffer[(idx * 3) * WORLD_STRIDE];
-        float aYWorld = postClipTriangleWorldVerticesBuffer[(idx * 3) * WORLD_STRIDE + 1];
-        float aZWorld = postClipTriangleWorldVerticesBuffer[(idx * 3) * WORLD_STRIDE + 2];
-        float bXWorld = postClipTriangleWorldVerticesBuffer[(idx * 3 + 1) * WORLD_STRIDE];
-        float bYWorld = postClipTriangleWorldVerticesBuffer[(idx * 3 + 1) * WORLD_STRIDE + 1];
-        float bZWorld = postClipTriangleWorldVerticesBuffer[(idx * 3 + 1) * WORLD_STRIDE + 2];
-        float cXWorld = postClipTriangleWorldVerticesBuffer[(idx * 3 + 2) * WORLD_STRIDE];
-        float cYWorld = postClipTriangleWorldVerticesBuffer[(idx * 3 + 2) * WORLD_STRIDE + 1];
-        float cZWorld = postClipTriangleWorldVerticesBuffer[(idx * 3 + 2) * WORLD_STRIDE + 2];
+        float aXWorld = worldBuffer[idx1 * Renderer.CLIP_STRIDE];
+        float aYWorld = worldBuffer[idx1 * Renderer.CLIP_STRIDE + 1];
+        float aZWorld = worldBuffer[idx1 * Renderer.CLIP_STRIDE + 2];
+        float bXWorld = worldBuffer[idx2 * Renderer.CLIP_STRIDE];
+        float bYWorld = worldBuffer[idx2 * Renderer.CLIP_STRIDE + 1];
+        float bZWorld = worldBuffer[idx2 * Renderer.CLIP_STRIDE + 2];
+        float cXWorld = worldBuffer[idx3 * Renderer.CLIP_STRIDE];
+        float cYWorld = worldBuffer[idx3 * Renderer.CLIP_STRIDE + 1];
+        float cZWorld = worldBuffer[idx3 * Renderer.CLIP_STRIDE + 2];
 
         //a top, b middle, c bottom vertex
         int aX = v1X, aY = v1Y;
@@ -698,18 +656,22 @@ public class SolidRenderer {
     }
 
     /*https://www.sunshine2k.de/coding/java/TriangleRasterization/TriangleRasterization.html*/
-    private void rasterizeTriangleGouraud(RenderOptions options, int idx, int v1X, int v1Y, float invW1, int v2X, int v2Y, float invW2, int v3X, int v3Y, float invW3) {
+    private void rasterizeTriangleGouraud(RenderOptions options, int i, int v1X, int v1Y, float invW1, int v2X, int v2Y, float invW2, int v3X, int v3Y, float invW3) {
 
 
-        float color1R = postClipTriangleLightBuffer[(idx * 3) * RGB_STRIDE];
-        float color1G = postClipTriangleLightBuffer[(idx * 3) * RGB_STRIDE + 1];
-        float color1B = postClipTriangleLightBuffer[(idx * 3) * RGB_STRIDE + 2];
-        float color2R = postClipTriangleLightBuffer[(idx * 3 + 1) * RGB_STRIDE];
-        float color2G = postClipTriangleLightBuffer[(idx * 3 + 1) * RGB_STRIDE + 1];
-        float color2B = postClipTriangleLightBuffer[(idx * 3 + 1) * RGB_STRIDE + 2];
-        float color3R = postClipTriangleLightBuffer[(idx * 3 + 2) * RGB_STRIDE];
-        float color3G = postClipTriangleLightBuffer[(idx * 3 + 2) * RGB_STRIDE + 1];
-        float color3B = postClipTriangleLightBuffer[(idx * 3 + 2) * RGB_STRIDE + 2];
+        int idx1 = postClipTriangleIndicesBuffer[i * 3];
+        int idx2 = postClipTriangleIndicesBuffer[i * 3 + 1];
+        int idx3 = postClipTriangleIndicesBuffer[i * 3 + 2];
+
+        float color1R = vertexLightBuffer[idx1 * RGB_STRIDE];
+        float color1G = vertexLightBuffer[idx1 * RGB_STRIDE + 1];
+        float color1B = vertexLightBuffer[idx1 * RGB_STRIDE + 2];
+        float color2R = vertexLightBuffer[idx2 * RGB_STRIDE];
+        float color2G = vertexLightBuffer[idx2 * RGB_STRIDE + 1];
+        float color2B = vertexLightBuffer[idx2 * RGB_STRIDE + 2];
+        float color3R = vertexLightBuffer[idx3 * RGB_STRIDE];
+        float color3G = vertexLightBuffer[idx3 * RGB_STRIDE + 1];
+        float color3B = vertexLightBuffer[idx3 * RGB_STRIDE + 2];
 
         scratchColorRaster1.r = color1R;
         scratchColorRaster1.g = color1G;
@@ -906,7 +868,6 @@ public class SolidRenderer {
         while (true) {
             int yFlip = Main.SCREEN_HEIGHT - y0 - 1;
             if (curInvW + WIRE_FRAME_DEPTH_EPSILON > frameBuffer.getDepth(x0, yFlip)) {
-//                frameBuffer.setDepth(x0, yFlip, curInvW);
                 frameBuffer.setPixel(x0, yFlip, rb, gb, bb);
             }
             if (x0 == x1 && y0 == y1) break;
@@ -1333,18 +1294,17 @@ public class SolidRenderer {
 
     private Color getRenderColor(int idx) {
 
-        if (currEntity.isLightObj || !currScene.hasLight() || currScene.lightingType == LightingType.GOURAUD)
+        if (!currScene.hasLight() || currEntity.isLightObj) {
             scratchColor.set(currEntity.material.diffuse);
-        else {
-
-            float triangleColorR = postClipTriangleLightBuffer[idx * RGB_STRIDE];
-            float triangleColorG = postClipTriangleLightBuffer[idx * RGB_STRIDE + 1];
-            float triangleColorB = postClipTriangleLightBuffer[idx * RGB_STRIDE + 2];
-
-            scratchColor.r = triangleColorR;
-            scratchColor.g = triangleColorG;
-            scratchColor.b = triangleColorB;
+            return scratchColor;
         }
+        float triangleColorR = postClipTriangleLightBuffer[idx * RGB_STRIDE];
+        float triangleColorG = postClipTriangleLightBuffer[idx * RGB_STRIDE + 1];
+        float triangleColorB = postClipTriangleLightBuffer[idx * RGB_STRIDE + 2];
+
+        scratchColor.r = triangleColorR;
+        scratchColor.g = triangleColorG;
+        scratchColor.b = triangleColorB;
 
         return scratchColor;
     }
