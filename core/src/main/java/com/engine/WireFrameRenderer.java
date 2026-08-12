@@ -59,11 +59,11 @@ public class WireFrameRenderer {
         int postClipEdgeCount = SHClipEdges(edgeCount, edges, postClipEdges);
         computeScreenVertices(postClipEdgeCount, screenBuffer);
 
-        displayEdges(entity.color, postClipEdgeCount);
+        displayEdges(entity.material, postClipEdgeCount);
 
     }
 
-    private void displayEdges(Color color, int postClipEdgeCount) {
+    private void displayEdges(Material material, int postClipEdgeCount) {
         for (int i = 0; i < postClipEdgeCount; i++) {
 
             int screenX1 = screenBuffer[i * 2 * 2];
@@ -77,7 +77,10 @@ public class WireFrameRenderer {
 //                screenY2 < 0 || screenY2 >= Main.SCREEN_HEIGHT)
 //                throw new IllegalStateException("Screen coordinate out of bounds: (" + screenX1 + "," + screenY1 + "), (" + screenX2 + "," + screenY2 + ")");
 
-            drawLine(screenX1, screenY1, screenX2, screenY2, color.r, color.g, color.b);
+            float r = Math.min(material.diffuse.r + material.specular.r + material.ambient.r, 1f);
+            float g = Math.min(material.diffuse.g + material.specular.g + material.ambient.g, 1f);
+            float b = Math.min(material.diffuse.b + material.specular.b + material.ambient.b, 1f);
+            drawLine(screenX1, screenY1, screenX2, screenY2, r, g, b);
         }
     }
 

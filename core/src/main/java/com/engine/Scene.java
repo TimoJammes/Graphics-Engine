@@ -17,7 +17,7 @@ public abstract class Scene {
 
     final List<Entity> entities = new ArrayList<>();
     Light light;
-    LightingType lightingType = LightingType.GOURAUD;
+    LightingType lightingType = LightingType.PHONG;
 //    final List<Light> lights = new ArrayList<>();
 
     final Map<Entity, RenderOptions> renderOptions = new HashMap<>();
@@ -117,7 +117,7 @@ class MultiScene extends Scene {
 //            .material(new Material(Material.Type.EMERALD))
             .pos(pos2)
             .rotateWorld(Math.PI, 0, 1, 0)
-            .behavior(new OscillateBehavior(1, new float[]{0, 1, 0}, pos2))
+            .behavior(new OscillateBehavior(1, new float[]{0, 1, 0}, pos2, 1))
             .spawn();
 
         entity(new Entity(beaver1))
@@ -184,9 +184,22 @@ class TestScene extends Scene {
         backgroundColor = Color.BLACK;
 
         entity("jet.obj")
-            .scale(1f)
-            .diffuse(Color.GRAY)
+//            .scale(.01f)
+
+//            .diffuse(Color.WHITE)
+            .material(new Material(Material.Type.GOLD))
+//            .rotateWorld(-Math.PI / 2, 1, 0, 0)
             .spawn();
+
+
+        Entity lightObj = entity(new SphereEntity(.3f))
+            .pos(0, 25, 0)
+            .diffuse(Color.WHITE)
+//            .behavior(new CircleBehavior(Math.PI / 8, new float[]{0, 0, 0}, new float[]{1, 0, 1}))
+//            .behavior(new OscillateBehavior(10, new float[]{0, 0, 1}, new float[]{0, 25, 0}, 100))
+            .spawn();
+
+        light(lightObj, Light.Type.POINT);
     }
 }
 
